@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --font-bebas: 'Bebas Neue';
+  --font-dm-sans: 'DM Sans';
+}
+
+/* ── Base ── */
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: #060d1a;
+  color: #f1f5f9;
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  min-height: 100vh;
+  overscroll-behavior: none;
+}
+
+/* ── Shimmer skeleton animation ── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #0f1d35 25%,
+    #162444 50%,
+    #0f1d35 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+/* ── Pulse dot for live games ── */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(1.4); }
+}
+
+.live-dot {
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+
+/* ── Stat update pulse ── */
+@keyframes statFlash {
+  0%   { background-color: rgba(245, 158, 11, 0.25); }
+  100% { background-color: transparent; }
+}
+
+.stat-updated {
+  animation: statFlash 2s ease-out;
+}
+
+/* ── Scrollbar styling ── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #0a1222;
+}
+::-webkit-scrollbar-thumb {
+  background: #162444;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #1e3058;
+}
+
+/* ── Sticky player name column in table ── */
+.sticky-col {
+  position: sticky;
+  left: 0;
+  background: #0a1222;
+  z-index: 1;
+}
+
+tr:hover .sticky-col {
+  background: #0f1d35;
+}
+
+/* ── Gold starred row highlight ── */
+.starred-row {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.08) 0%, transparent 100%);
+  border-left: 2px solid #f59e0b;
+}
+
+/* ── Tab bar ── */
+.tab-bar {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── Score card scroll ── */
+.score-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.score-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Button focus states ── */
+button:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+/* ── Grade badge ── */
+.grade-A { color: #4ade80; }
+.grade-B { color: #60a5fa; }
+.grade-C { color: #f59e0b; }
+.grade-D { color: #fb923c; }
+.grade-F { color: #f87171; }
+
+/* ── Heat indicators ── */
+.heat-hot  { color: #4ade80; }
+.heat-warm { color: #f59e0b; }
+.heat-cold { color: #f87171; }
+
+/* ── Responsive table wrapper ── */
+.table-scroll-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Sort caret ── */
+.sort-asc::after  { content: ' ↑'; opacity: 0.7; }
+.sort-desc::after { content: ' ↓'; opacity: 0.7; }
+
+/* ── Input / Select dark style ── */
+.form-input-dark {
+  background: #0f1d35;
+  border: 1px solid #162444;
+  color: #f1f5f9;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-input-dark:focus {
+  border-color: #f59e0b;
+}
+.form-input-dark option {
+  background: #0a1222;
+}
