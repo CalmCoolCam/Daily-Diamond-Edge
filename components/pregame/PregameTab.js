@@ -1,36 +1,27 @@
 'use client'
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import HotPlayers from './HotPlayers'
 import MatchupGrades from './MatchupGrades'
 import PlayerTable from './PlayerTable'
-import { computeMatchupGrade, computeHeat, extractSparklineData, currentSeason } from '@/lib/mlbApi'
-import { api } from '@/lib/mlbApi'
+import { computeMatchupGrade, extractSparklineData, currentSeason } from '@/lib/mlbApi'
 import { getCached, setCached } from '@/lib/storage'
 
-/**
- * Builds the normalized player list from enriched game data
- */
 function buildPlayerList(games) {
   const players = []
-  const season = currentSeason()
-
   for (const game of games) {
     const homeTeam = game.teams?.home?.team
     const awayTeam = game.teams?.away?.team
 
-    // Compute matchup grades
-    const homePitcherStats = game.homePitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
-    const awayPitcherStats = game.awayPitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
+    // Pitcher ERA for matchup grades
+    const homePitcherStat = game.homePitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
+    const awayPitcherStat = game.awayPitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
+    const homePitcherERA = parseFloat(homePitcherStat.era) || 4.5
+    const awayPitcherERA = parseFloat(awayPitcherStat.era) || 4.5
 
-    const homePitcherERA = parseFloat(homePitcherStats.era) || 4.5
-    const awayPitcherERA = parseFloat(awayPitcherStats.era) || 4.5
-
-    // Away batters face home pitcher
+    // Away batters face home pitcher; home batters face away pitcher
     const awayBattersGrade = computeMatchupGrade(homePitcherERA, homePitcherERA)
-    // Home batters face away pitcher
     const homeBattersGrade = computeMatchupGrade(awayPitcherERA, awayPitcherERA)
 
-    // Process rosters
     for (const side of ['home', 'away']) {
       const team = side === 'home' ? homeTeam : awayTeam
       const opponent = side === 'home' ? awayTeam : homeTeam
@@ -40,9 +31,7 @@ function buildPlayerList(games) {
       if (!roster?.roster) continue
 
       for (const member of roster.roster) {
-        // Only batters (exclude P)
         if (member.position?.abbreviation === 'P') continue
-
         players.push({
           id: member.person?.id,
           name: member.person?.fullName || '',
@@ -54,31 +43,19 @@ function buildPlayerList(games) {
           gameStatus: game.status?.abstractGameState,
           isHome: side === 'home',
           matchupGrade: grade,
-          // These will be populated lazily via usePlayerGameLog
+          heatTier: 4,
           sparkline: [],
           last7Total: 0,
-          yesterdayH: 0,
-          yesterdayR: 0,
-          yesterdayRBI: 0,
-          // Season stats (from live feed if available, otherwise 0)
-          seasonH: 0,
-          seasonR: 0,
-          seasonRBI: 0,
-          seasonTotal: 0,
-          todayH: 0,
-          todayR: 0,
-          todayRBI: 0,
+          yesterdayH: 0, yesterdayR: 0, yesterdayRBI: 0,
+          seasonH: 0, seasonR: 0, seasonRBI: 0, seasonTotal: 0,
+          todayH: 0, todayR: 0, todayRBI: 0,
         })
       }
     }
   }
-
   return players
 }
 
-/**
- * Enriches players with season stats and game logs in batches
- */
 async function enrichPlayers(players, season, onProgress) {
   const BATCH = 8
   const enriched = [...players]
@@ -93,11 +70,9 @@ async function enrichPlayers(players, season, onProgress) {
 
     if (!result) {
       try {
-        result = await api.getBatchPlayerStats(ids, season)
+        result = await fetch(`/api/mlb/players/batch?ids=${ids.join(',')}&season=${season}`).then((r) => r.json())
         setCached(cacheKey, result)
-      } catch {
-        continue
-      }
+      } catch { continue }
     }
 
     for (const item of result?.players || []) {
@@ -105,78 +80,56 @@ async function enrichPlayers(players, season, onProgress) {
       if (idx === -1) continue
 
       const statsArr = item.data?.stats || []
+      // Season stats: stats[].type.displayName === 'season' → splits[0].stat
+      // Fields: stat.hits (H), stat.runs (R), stat.rbi (RBI) — verified field names
       const seasonStat = statsArr.find((s) => s.type?.displayName === 'season')
+      // Game log: stats[].type.displayName === 'gameLog' → splits[] per game, most-recent-first
+      // Each split.stat is ONE game's line (hits+runs+rbi), NOT cumulative
       const gameLog = statsArr.find((s) => s.type?.displayName === 'gameLog')
 
-      const seasonSplit = seasonStat?.splits?.[0]?.stat || {}
+      const ss = seasonStat?.splits?.[0]?.stat || {}
       const logSplits = gameLog?.splits || []
 
-      const sparkline = extractSparklineData(
-        logSplits.slice(0, 7).map((s) => ({ stat: s.stat })),
-      )
+      const sparklineInput = logSplits.slice(0, 7).map((s) => ({ stat: s.stat }))
+      const sparkline = extractSparklineData(sparklineInput)
       const last7Total = sparkline.reduce((a, b) => a + b, 0)
       const yday = logSplits[0]?.stat || {}
 
       enriched[idx] = {
         ...enriched[idx],
-        seasonH: seasonSplit.hits || 0,
-        seasonR: seasonSplit.runs || 0,
-        seasonRBI: seasonSplit.rbi || 0,
-        seasonTotal: (seasonSplit.hits || 0) + (seasonSplit.runs || 0) + (seasonSplit.rbi || 0),
+        // Season H/R/RBI: stat.hits, stat.runs, stat.rbi from season group
+        seasonH: ss.hits || 0,
+        seasonR: ss.runs || 0,
+        seasonRBI: ss.rbi || 0,
+        seasonTotal: (ss.hits || 0) + (ss.runs || 0) + (ss.rbi || 0),
         sparkline,
         last7Total,
+        // Yesterday's line: first game-log entry (most recent game)
         yesterdayH: yday.hits || 0,
         yesterdayR: yday.runs || 0,
         yesterdayRBI: yday.rbi || 0,
-        heat: computeHeat(last7Total),
       }
     }
 
     onProgress([...enriched])
-    // Yield to UI between batches
     await new Promise((r) => setTimeout(r, 20))
   }
-
   return enriched
 }
 
-export default function PregameTab({ gamesData, loading, error, onRetry, stars, onToggleStar, selectedGamePk, onSelectGame }) {
-  const [players, setPlayers] = useState([])
-  const [enriching, setEnriching] = useState(false)
+export default function PregameTab({ gamesData, loading, error, onRetry, players, stars, onToggleStar, selectedGamePk, onSelectGame, updatedIds }) {
   const season = currentSeason()
 
-  // Build initial player list from game data (fast, no API)
-  const basePlayers = useMemo(() => {
-    if (!gamesData?.games) return []
-    return buildPlayerList(gamesData.games)
-  }, [gamesData])
-
-  // Sort base players by last7Total for hot players (will update as enriched)
+  // Hot players: already enriched via parent, sorted by last7Total
   const hotPlayers = useMemo(() => {
     return [...players]
       .sort((a, b) => (b.last7Total || 0) - (a.last7Total || 0))
       .slice(0, 10)
   }, [players])
 
-  // Enrich players progressively
-  useEffect(() => {
-    if (!basePlayers.length) return
-    setPlayers(basePlayers)
-    setEnriching(true)
-
-    let cancelled = false
-    enrichPlayers(basePlayers, season, (partial) => {
-      if (!cancelled) setPlayers(partial)
-    }).finally(() => {
-      if (!cancelled) setEnriching(false)
-    })
-
-    return () => { cancelled = true }
-  }, [basePlayers, season])
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[40%_60%] gap-4 p-4">
-      {/* Left column: Hot players + Matchup grades */}
+      {/* Left: Hot players + matchup grades */}
       <div className="space-y-2 lg:overflow-y-auto lg:max-h-[calc(100vh-200px)] lg:pr-1">
         <HotPlayers
           players={hotPlayers}
@@ -196,16 +149,17 @@ export default function PregameTab({ gamesData, loading, error, onRetry, stars, 
         />
       </div>
 
-      {/* Right column: Full player table */}
+      {/* Right: Full player table */}
       <div className="min-h-0">
         <PlayerTable
           players={players}
-          loading={loading || (enriching && !players.length)}
+          loading={loading}
           error={error}
           onRetry={onRetry}
           stars={stars}
           onToggleStar={onToggleStar}
           selectedGamePk={selectedGamePk}
+          updatedIds={updatedIds}
           games={gamesData?.games || []}
         />
       </div>

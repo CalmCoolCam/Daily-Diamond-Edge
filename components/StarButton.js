@@ -1,14 +1,6 @@
 'use client'
 import { useState } from 'react'
 
-/**
- * StarButton — instant optimistic star toggle
- * Props:
- *   starred: bool
- *   onToggle: () => { starred, count, limitReached? }
- *   pickCount: number
- *   size: 'sm' | 'md'
- */
 export default function StarButton({ starred, onToggle, pickCount = 0, size = 'sm' }) {
   const [limitFlash, setLimitFlash] = useState(false)
 
@@ -21,7 +13,9 @@ export default function StarButton({ starred, onToggle, pickCount = 0, size = 's
     }
   }
 
-  const sizeClass = size === 'md' ? 'text-xl p-1.5 min-w-[44px] min-h-[44px]' : 'text-base p-1 min-w-[32px] min-h-[32px]'
+  const sizeClass = size === 'md'
+    ? 'text-xl p-1.5 min-w-[44px] min-h-[44px]'
+    : 'text-base p-1 min-w-[36px] min-h-[36px]'
 
   return (
     <div className="flex items-center gap-1">
@@ -30,10 +24,10 @@ export default function StarButton({ starred, onToggle, pickCount = 0, size = 's
         className={`
           ${sizeClass} rounded-lg flex items-center justify-center transition-all duration-100
           ${starred
-            ? 'text-gold-500 bg-gold-500/10 hover:bg-gold-500/20'
-            : 'text-slate-500 hover:text-slate-300 hover:bg-navy-700'
+            ? 'text-amber-500 bg-amber-50 hover:bg-amber-100 border border-amber-200'
+            : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50 border border-transparent'
           }
-          ${limitFlash ? 'text-red-400 bg-red-900/20 animate-pulse' : ''}
+          ${limitFlash ? 'text-red-500 bg-red-50 border-red-200 animate-pulse' : ''}
         `}
         title={starred ? 'Unstar player' : limitFlash ? 'Max 10 stars reached' : 'Star player'}
         aria-label={starred ? 'Unstar' : 'Star'}
@@ -42,10 +36,7 @@ export default function StarButton({ starred, onToggle, pickCount = 0, size = 's
         {starred ? '★' : '☆'}
       </button>
       {pickCount > 0 && (
-        <span
-          className="text-[9px] font-semibold text-slate-500 tabular-nums leading-none"
-          title={`Picked ${pickCount}x this season`}
-        >
+        <span className="text-[9px] font-semibold text-slate-400 tabular-nums leading-none">
           {pickCount}x
         </span>
       )}

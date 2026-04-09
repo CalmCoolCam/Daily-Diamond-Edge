@@ -5,11 +5,11 @@ import ScoreCards from '@/components/ScoreCards'
 import TabNav from '@/components/TabNav'
 import PregameTab from '@/components/pregame/PregameTab'
 import LiveTab from '@/components/live/LiveTab'
-import ResultsTab from '@/components/results/ResultsTab'
+import LeaderboardTab from '@/components/leaderboard/LeaderboardTab'
 import MyPicks from '@/components/MyPicks'
 import { useStars } from '@/hooks/useStars'
 import { usePicks } from '@/hooks/usePicks'
-import { computeHeat, computeMatchupGrade, extractSparklineData, currentSeason } from '@/lib/mlbApi'
+import { computeMatchupGrade, extractSparklineData, computePlayerTiers, currentSeason } from '@/lib/mlbApi'
 import { getCached, setCached } from '@/lib/storage'
 import { PageSkeleton } from '@/components/ui/Skeleton'
 
@@ -36,46 +36,123 @@ export default function App() {
   const { stars, starCount, isStarred, toggle: toggleStar } = useStars()
   const { refresh: refreshPicks } = usePicks()
 
-  // Handle star toggle with picks sync
   function handleToggleStar(playerId, meta) {
     const result = toggleStar(playerId, meta)
     if (result?.starred) refreshPicks()
     return result
   }
 
-  // ── Fetch today's enriched game data ────────────────────────────────────────
+  // ── Build player list from raw game data + live batting stats ──────────────
+
+  function buildPlayerList(games, liveStatsGames = {}) {
+    const list = []
+
+    for (const game of games) {
+      const homeTeam = game.teams?.home?.team
+      const awayTeam = game.teams?.away?.team
+      const gameStatus = game.status?.abstractGameState
+
+      // Pitcher ERA for matchup grades
+      const homePitcherStat = game.homePitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
+      const awayPitcherStat = game.awayPitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
+      const homePitcherERA = parseFloat(homePitcherStat.era) || 4.5
+      const awayPitcherERA = parseFloat(awayPitcherStat.era) || 4.5
+
+      // Away batters face home pitcher; home batters face away pitcher
+      const awayBattersGrade = computeMatchupGrade(homePitcherERA, homePitcherERA)
+      const homeBattersGrade = computeMatchupGrade(awayPitcherERA, awayPitcherERA)
+
+      // Live batting stats from /api/mlb/games/live-stats
+      // Path: liveData.boxscore.teams.{side}.players.{IDxxx}.stats.batting
+      // Fields: hits (H), runs (R — NOT homeRuns), rbi (RBI)
+      const gameLive = liveStatsGames[game.gamePk] || {}
+
+      for (const side of ['home', 'away']) {
+        const team = side === 'home' ? homeTeam : awayTeam
+        const opponent = side === 'home' ? awayTeam : homeTeam
+        const roster = side === 'home' ? game.homeRoster : game.awayRoster
+        const grade = side === 'home' ? homeBattersGrade : awayBattersGrade
+        // liveSideStats keyed by player ID string: { h, r, rbi, ab }
+        const liveSideStats = side === 'home' ? (gameLive.home || {}) : (gameLive.away || {})
+
+        if (!roster?.roster) continue
+
+        for (const member of roster.roster) {
+          if (member.position?.abbreviation === 'P') continue
+
+          const pid = member.person?.id
+          // Merge live batting stats if available for this player
+          const livePlayerStats = liveSideStats[String(pid)] || {}
+
+          list.push({
+            id: pid,
+            name: member.person?.fullName || '',
+            teamId: team?.id,
+            teamAbbr: team?.abbreviation || '',
+            opponentAbbr: opponent?.abbreviation || '',
+            position: member.position?.abbreviation || '',
+            gamePk: game.gamePk,
+            gameStatus,
+            isHome: side === 'home',
+            matchupGrade: grade,
+            // Today: from live-stats feed (hits/runs/rbi NOT homeRuns)
+            todayH:   livePlayerStats.h   || 0,
+            todayR:   livePlayerStats.r   || 0,
+            todayRBI: livePlayerStats.rbi || 0,
+            todayAB:  livePlayerStats.ab  || 0,
+            // Season stats & game log populated via enrichment
+            heatTier: 4,
+            seasonH: 0, seasonR: 0, seasonRBI: 0, seasonTotal: 0,
+            sparkline: [], last7Total: 0,
+            yesterdayH: 0, yesterdayR: 0, yesterdayRBI: 0,
+          })
+        }
+      }
+    }
+
+    return list
+  }
+
+  // ── Fetch today's game data + live batting stats ───────────────────────────
+
   const fetchData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
 
     try {
       setError(null)
-      const res = await fetch('/api/mlb/games/today')
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Server error' }))
-        throw new Error(err.error || `HTTP ${res.status}`)
-      }
-      const json = await res.json()
 
-      // Check for live games
+      // Fetch rosters/schedule and live batting stats in parallel
+      const [todayRes, liveRes] = await Promise.allSettled([
+        fetch('/api/mlb/games/today'),
+        fetch('/api/mlb/games/live-stats'),
+      ])
+
+      if (todayRes.status !== 'fulfilled' || !todayRes.value.ok) {
+        const msg = todayRes.status === 'fulfilled'
+          ? await todayRes.value.json().then((j) => j.error || `HTTP ${todayRes.value.status}`).catch(() => 'Server error')
+          : 'Network error'
+        throw new Error(msg)
+      }
+
+      const json = await todayRes.value.json()
+      const liveStats = liveRes.status === 'fulfilled' && liveRes.value.ok
+        ? await liveRes.value.json()
+        : { games: {} }
+
       isLiveRef.current = json.games?.some(
         (g) => g.status?.abstractGameState === 'Live',
       ) || false
 
       setGamesData(json)
 
-      // Build flat player list from all game rosters
-      const built = buildPlayerList(json.games || [])
+      const built = buildPlayerList(json.games || [], liveStats.games || {})
 
-      // Detect stat updates
+      // Detect stat changes for highlight animation
       const updated = new Set()
       built.forEach((p) => {
         const prev = prevPlayersRef.current[p.id]
         if (!prev) return
-        if (
-          prev.todayH !== p.todayH ||
-          prev.todayR !== p.todayR ||
-          prev.todayRBI !== p.todayRBI
-        ) {
+        if (prev.todayH !== p.todayH || prev.todayR !== p.todayR || prev.todayRBI !== p.todayRBI) {
           updated.add(String(p.id))
         }
       })
@@ -92,9 +169,9 @@ export default function App() {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Initial load + periodic refresh when Live tab is active or live games exist
+  // Initial load + periodic refresh when Live tab active or live games exist
   useEffect(() => {
     fetchData(true)
 
@@ -107,82 +184,7 @@ export default function App() {
     return () => clearInterval(intervalRef.current)
   }, [fetchData, activeTab])
 
-  // ── Build player list from raw game data ───────────────────────────────────
-
-  function buildPlayerList(games) {
-    const list = []
-
-    for (const game of games) {
-      const homeTeam = game.teams?.home?.team
-      const awayTeam = game.teams?.away?.team
-      const gameStatus = game.status?.abstractGameState
-
-      // Extract pitcher stats for matchup grades
-      const homePitcherStat = game.homePitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
-      const awayPitcherStat = game.awayPitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
-      const homePitcherERA = parseFloat(homePitcherStat.era) || 4.5
-      const awayPitcherERA = parseFloat(awayPitcherStat.era) || 4.5
-
-      const awayBattersGrade = computeMatchupGrade(homePitcherERA, homePitcherERA)
-      const homeBattersGrade = computeMatchupGrade(awayPitcherERA, awayPitcherERA)
-
-      // Get live boxscore stats if available
-      const liveFeed = game.liveData
-      const homePlayers = liveFeed?.boxscore?.teams?.home?.players || {}
-      const awayPlayers = liveFeed?.boxscore?.teams?.away?.players || {}
-
-      for (const side of ['home', 'away']) {
-        const team = side === 'home' ? homeTeam : awayTeam
-        const opponent = side === 'home' ? awayTeam : homeTeam
-        const roster = side === 'home' ? game.homeRoster : game.awayRoster
-        const grade = side === 'home' ? homeBattersGrade : awayBattersGrade
-        const liveBoxPlayers = side === 'home' ? homePlayers : awayPlayers
-
-        if (!roster?.roster) continue
-
-        for (const member of roster.roster) {
-          if (member.position?.abbreviation === 'P') continue
-
-          const pid = member.person?.id
-          const livePlayer = liveBoxPlayers[`ID${pid}`]
-          const liveBatting = livePlayer?.stats?.batting || {}
-
-          list.push({
-            id: pid,
-            name: member.person?.fullName || '',
-            teamId: team?.id,
-            teamAbbr: team?.abbreviation || '',
-            opponentAbbr: opponent?.abbreviation || '',
-            position: member.position?.abbreviation || '',
-            gamePk: game.gamePk,
-            gameStatus,
-            isHome: side === 'home',
-            matchupGrade: grade,
-            // Today's stats from live feed
-            todayH: liveBatting.hits || 0,
-            todayR: liveBatting.runs || 0,
-            todayRBI: liveBatting.rbi || 0,
-            todayAB: liveBatting.atBats || 0,
-            // Season stats & game log will be populated via enrichment
-            seasonH: 0,
-            seasonR: 0,
-            seasonRBI: 0,
-            seasonTotal: 0,
-            sparkline: [],
-            last7Total: 0,
-            yesterdayH: 0,
-            yesterdayR: 0,
-            yesterdayRBI: 0,
-            heat: 'cold',
-          })
-        }
-      }
-    }
-
-    return list
-  }
-
-  // ── Progressively enrich players with season stats ─────────────────────────
+  // ── Progressively enrich players with season stats + game logs ─────────────
 
   useEffect(() => {
     if (!players.length) return
@@ -220,7 +222,9 @@ export default function App() {
           if (idx === -1) continue
 
           const statsArr = item.data?.stats || []
+          // Season stats: type=season → splits[0].stat → hits/runs/rbi
           const seasonStat = statsArr.find((s) => s.type?.displayName === 'season')
+          // Game log: type=gameLog → splits[] per game, most-recent-first, NOT cumulative
           const gameLog = statsArr.find((s) => s.type?.displayName === 'gameLog')
 
           const ss = seasonStat?.splits?.[0]?.stat || {}
@@ -229,25 +233,27 @@ export default function App() {
           const sparklineInput = logSplits.slice(0, 7).map((s) => ({ stat: s.stat }))
           const sparkline = extractSparklineData(sparklineInput)
           const last7Total = sparkline.reduce((a, b) => a + b, 0)
+          // Yesterday = most recent game log entry (logSplits[0])
           const yday = logSplits[0]?.stat || {}
 
           enriched[idx] = {
             ...enriched[idx],
-            seasonH: ss.hits || 0,
-            seasonR: ss.runs || 0,
-            seasonRBI: ss.rbi || 0,
+            seasonH:     ss.hits || 0,   // stat.hits (NOT homeRuns)
+            seasonR:     ss.runs || 0,   // stat.runs
+            seasonRBI:   ss.rbi  || 0,
             seasonTotal: (ss.hits || 0) + (ss.runs || 0) + (ss.rbi || 0),
             sparkline,
             last7Total,
-            yesterdayH: yday.hits || 0,
-            yesterdayR: yday.runs || 0,
-            yesterdayRBI: yday.rbi || 0,
-            heat: computeHeat(last7Total),
+            yesterdayH:   yday.hits || 0,
+            yesterdayR:   yday.runs || 0,
+            yesterdayRBI: yday.rbi  || 0,
           }
         }
 
         if (!cancelled) {
-          setPlayers([...enriched])
+          // Compute relative heat tiers from full enriched list (top-5 = tier 1, etc.)
+          const tiers = computePlayerTiers(enriched)
+          setPlayers(enriched.map((p) => ({ ...p, heatTier: tiers[p.id] || 4 })))
         }
         await new Promise((r) => setTimeout(r, 25))
       }
@@ -257,18 +263,14 @@ export default function App() {
     return () => { cancelled = true }
   }, [gamesData]) // Re-enrich when games data refreshes
 
-  // ── Schedule data (for score cards) ───────────────────────────────────────
-
   const scheduleGames = gamesData?.games || []
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[#060d1a] flex flex-col">
-      {/* Sticky header */}
+    <div className="min-h-screen bg-slate-50 flex flex-col">
       <Header onOpenPicks={() => setPicksOpen(true)} activeTab={activeTab} />
 
-      {/* Score cards strip — always visible */}
       <ScoreCards
         games={scheduleGames}
         loading={loading}
@@ -278,23 +280,20 @@ export default function App() {
         onSelectGame={setSelectedGamePk}
       />
 
-      {/* Desktop top tabs */}
+      {/* Tab nav — desktop top bar + mobile bottom bar */}
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Tab content */}
       <main className="flex-1 max-w-screen-2xl mx-auto w-full pb-20 lg:pb-4">
-        {loading && !gamesData && (
-          <PageSkeleton />
-        )}
+        {loading && !gamesData && <PageSkeleton />}
 
         {!loading && error && !gamesData && (
           <div className="p-8 text-center">
             <div className="text-5xl mb-4">⚾</div>
-            <h3 className="text-xl font-display text-white mb-2">Couldn't load game data</h3>
-            <p className="text-sm text-slate-400 mb-4">{error}</p>
+            <h3 className="text-xl font-semibold text-slate-800 mb-2">Couldn&apos;t load game data</h3>
+            <p className="text-sm text-slate-500 mb-4">{error}</p>
             <button
               onClick={() => fetchData(true)}
-              className="px-6 py-3 bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold rounded-lg transition-colors"
+              className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-white font-semibold rounded-lg transition-colors"
             >
               Try Again
             </button>
@@ -306,6 +305,7 @@ export default function App() {
             {activeTab === 'pregame' && (
               <PregameTab
                 gamesData={gamesData}
+                players={players}
                 loading={loading}
                 error={error}
                 onRetry={() => fetchData(true)}
@@ -313,6 +313,7 @@ export default function App() {
                 onToggleStar={handleToggleStar}
                 selectedGamePk={selectedGamePk}
                 onSelectGame={setSelectedGamePk}
+                updatedIds={updatedIds}
               />
             )}
 
@@ -329,8 +330,8 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'results' && (
-              <ResultsTab
+            {activeTab === 'leaderboard' && (
+              <LeaderboardTab
                 players={players}
                 loading={loading}
                 error={error}
@@ -344,10 +345,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile bottom tab nav */}
-      <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
-
-      {/* My Picks modal */}
       <MyPicks
         isOpen={picksOpen}
         onClose={() => setPicksOpen(false)}

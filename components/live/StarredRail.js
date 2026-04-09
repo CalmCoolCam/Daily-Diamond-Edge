@@ -1,34 +1,34 @@
 'use client'
 import TeamBadge from '../ui/TeamBadge'
 import HeatDot from '../ui/HeatDot'
-import { computeHeat } from '@/lib/mlbApi'
+import { playerDisplayName } from '@/lib/mlbApi'
 
 function StarredCard({ player }) {
-  const heat = computeHeat(player.last7Total || 0)
   const isLive = player.gameStatus === 'Live'
+  const todayTotal = (player.todayH || 0) + (player.todayR || 0) + (player.todayRBI || 0)
 
   return (
-    <div className="flex-shrink-0 w-36 bg-navy-800 border border-gold-500/30 rounded-xl p-3 space-y-1.5 hover:border-gold-500/60 transition-colors">
-      {/* Name + team */}
+    <div className="flex-shrink-0 w-36 bg-white border border-amber-200 rounded-xl p-3 space-y-1.5 card-shadow hover:border-amber-300 transition-colors">
       <div className="flex items-center justify-between">
         <TeamBadge abbr={player.teamAbbr} size="xs" />
-        <HeatDot total7Day={player.last7Total} size="sm" showEmoji />
+        <HeatDot heatTier={player.heatTier} />
       </div>
-      <div className="text-xs font-semibold text-white leading-tight truncate" title={player.name}>
-        {player.name}
+      <div className="text-xs font-semibold text-slate-800 leading-tight truncate" title={player.name}>
+        {playerDisplayName(player.name, player.heatTier)}
       </div>
-      {/* Today's line */}
-      <div className="flex items-center gap-1.5">
-        {isLive && (
-          <span className="live-dot w-1.5 h-1.5 bg-green-400 rounded-full inline-block" />
-        )}
-        <span className="text-xs font-mono text-gold-400 tabular-nums">
+      <div className="flex items-center gap-1">
+        {isLive && <span className="live-dot w-1.5 h-1.5 bg-green-500 rounded-full inline-block flex-shrink-0" />}
+        <span className="text-xs font-mono text-slate-500 tabular-nums text-[11px]">
           {player.todayH ?? 0}H {player.todayR ?? 0}R {player.todayRBI ?? 0}RBI
         </span>
       </div>
-      {/* Game status */}
-      <div className="text-[10px] text-slate-500">
-        {player.gameStatus === 'Final' ? 'Final' : isLive ? 'Live' : player.gameStatus || '--'}
+      <div>
+        <span className={`text-xl font-bold tabular-nums leading-none ${
+          todayTotal >= 3 ? 'text-green-600' : todayTotal >= 1 ? 'text-amber-500' : 'text-slate-300'
+        }`}>
+          {todayTotal}
+        </span>
+        <span className="text-[10px] text-slate-400 ml-1">today</span>
       </div>
     </div>
   )
@@ -39,10 +39,10 @@ export default function StarredRail({ players, starIds }) {
 
   if (starIds.length === 0) {
     return (
-      <div className="bg-navy-800/60 border border-navy-700 rounded-xl p-4 mb-4 text-center">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-center">
         <p className="text-sm text-slate-500">
           ★ Star players in the{' '}
-          <span className="text-gold-500">Pregame</span> tab to track them here
+          <span className="text-amber-500 font-medium">Pregame</span> tab to track them here
         </p>
       </div>
     )
@@ -50,18 +50,18 @@ export default function StarredRail({ players, starIds }) {
 
   return (
     <div className="mb-4">
-      <div className="flex items-center gap-2 mb-2 px-0.5">
-        <span className="text-gold-500 text-sm">★</span>
-        <span className="text-xs font-semibold text-white">My Stars Today</span>
-        <span className="text-xs text-slate-500">({starredPlayers.length}/{starIds.length})</span>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-amber-500 text-sm">★</span>
+        <span className="text-xs font-semibold text-slate-700">My Stars Today</span>
+        <span className="text-xs text-slate-400">({starredPlayers.length}/{starIds.length})</span>
       </div>
       <div className="score-scroll flex gap-2 overflow-x-auto pb-1">
         {starIds.map((id) => {
           const player = starredPlayers.find((p) => String(p.id) === id)
           if (!player) {
             return (
-              <div key={id} className="flex-shrink-0 w-36 h-24 bg-navy-800/40 border border-navy-700/40 rounded-xl flex items-center justify-center">
-                <span className="text-xs text-slate-600">Loading…</span>
+              <div key={id} className="flex-shrink-0 w-36 h-24 bg-slate-100 border border-slate-200 rounded-xl flex items-center justify-center">
+                <span className="text-xs text-slate-400">Loading…</span>
               </div>
             )
           }

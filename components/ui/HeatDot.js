@@ -1,53 +1,32 @@
 'use client'
-import { computeHeat } from '@/lib/mlbApi'
-
-const HEAT_CONFIG = {
-  hot:  { emoji: '🟢', label: 'Hot',  cls: 'text-green-400', dot: 'bg-green-400' },
-  warm: { emoji: '🟡', label: 'Warm', cls: 'text-yellow-400', dot: 'bg-yellow-400' },
-  cold: { emoji: '🔴', label: 'Cold', cls: 'text-red-400', dot: 'bg-red-400' },
-}
+import { TIER_CONFIG } from '@/lib/mlbApi'
 
 /**
- * HeatDot — colored indicator showing player temperature
+ * HeatDot — 8px colored circle showing heat tier.
+ *
  * Props:
- *   total7Day: number  — H+R+RBI over last 7 games
- *   heat: 'hot'|'warm'|'cold'  — or computed from total7Day
- *   size: 'sm'|'md'|'lg'
- *   showEmoji: bool
+ *   heatTier: 1|2|3|4   — preferred; use player.heatTier from data layer
  *   showLabel: bool
+ *
+ * Tier colors (no red anywhere):
+ *   1 ON FIRE — green #16a34a with glow
+ *   2 HOT     — green #22c55e
+ *   3 WARM    — amber #f59e0b
+ *   4 COLD    — light blue #93c5fd
  */
-export default function HeatDot({
-  total7Day,
-  heat: heatProp,
-  size = 'sm',
-  showEmoji = false,
-  showLabel = false,
-}) {
-  const heat = heatProp || (total7Day != null ? computeHeat(total7Day) : 'cold')
-  const config = HEAT_CONFIG[heat] || HEAT_CONFIG.cold
-
-  const sizeMap = { sm: 'w-2 h-2', md: 'w-3 h-3', lg: 'w-4 h-4' }
-
-  if (showEmoji) {
-    return (
-      <span title={config.label} aria-label={config.label}>
-        {config.emoji}
-        {showLabel && (
-          <span className={`ml-1 text-xs ${config.cls}`}>{config.label}</span>
-        )}
-      </span>
-    )
-  }
+export default function HeatDot({ heatTier = 4, showLabel = false }) {
+  const config = TIER_CONFIG[heatTier] || TIER_CONFIG[4]
 
   return (
-    <span className="flex items-center gap-1">
+    <span className="inline-flex items-center gap-1.5">
       <span
-        className={`inline-block rounded-full ${sizeMap[size]} ${config.dot}`}
+        className={`inline-block rounded-full w-2 h-2 flex-shrink-0 ${config.dotClass}`}
+        style={config.dotGlow ? { boxShadow: config.dotGlow } : undefined}
         title={config.label}
         aria-label={config.label}
       />
       {showLabel && (
-        <span className={`text-xs ${config.cls}`}>{config.label}</span>
+        <span className="text-xs font-medium text-slate-500">{config.label}</span>
       )}
     </span>
   )

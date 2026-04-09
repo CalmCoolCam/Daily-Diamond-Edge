@@ -3,11 +3,25 @@
 @tailwind utilities;
 
 /* ── Google Fonts ── */
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&display=swap');
 
 :root {
   --font-bebas: 'Bebas Neue';
   --font-dm-sans: 'DM Sans';
+
+  /* Light theme color tokens */
+  --bg-page:        #f8fafc;
+  --bg-card:        #ffffff;
+  --bg-surface:     #f8fafc;
+  --bg-hover:       #f1f5f9;
+  --border:         #e2e8f0;
+  --border-strong:  #cbd5e1;
+  --text-primary:   #0f172a;
+  --text-secondary: #64748b;
+  --text-muted:     #94a3b8;
+  --accent-gold:    #f59e0b;
+  --accent-blue:    #1d4ed8;
+  --accent-blue-lt: #93c5fd;
 }
 
 /* ── Base ── */
@@ -17,14 +31,14 @@ html {
 }
 
 body {
-  background-color: #060d1a;
-  color: #f1f5f9;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
   font-family: var(--font-dm-sans), system-ui, sans-serif;
   min-height: 100vh;
   overscroll-behavior: none;
 }
 
-/* ── Shimmer skeleton animation ── */
+/* ── Shimmer skeleton animation (light theme) ── */
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
@@ -33,9 +47,9 @@ body {
 .skeleton {
   background: linear-gradient(
     90deg,
-    #0f1d35 25%,
-    #162444 50%,
-    #0f1d35 75%
+    #e2e8f0 25%,
+    #f1f5f9 50%,
+    #e2e8f0 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
@@ -45,64 +59,65 @@ body {
 /* ── Pulse dot for live games ── */
 @keyframes livePulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.5; transform: scale(1.4); }
+  50%       { opacity: 0.6; transform: scale(1.5); }
 }
 
 .live-dot {
   animation: livePulse 1.5s ease-in-out infinite;
 }
 
-/* ── Stat update pulse ── */
+/* ── Stat update flash ── */
 @keyframes statFlash {
-  0%   { background-color: rgba(245, 158, 11, 0.25); }
+  0%   { background-color: rgba(245, 158, 11, 0.18); }
   100% { background-color: transparent; }
 }
 
 .stat-updated {
-  animation: statFlash 2s ease-out;
+  animation: statFlash 2.5s ease-out forwards;
 }
 
-/* ── Scrollbar styling ── */
+/* ── Scrollbar styling (light) ── */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #0a1222;
+  background: #f1f5f9;
 }
 ::-webkit-scrollbar-thumb {
-  background: #162444;
+  background: #cbd5e1;
   border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #1e3058;
+  background: #94a3b8;
 }
 
 /* ── Sticky player name column in table ── */
 .sticky-col {
   position: sticky;
   left: 0;
-  background: #0a1222;
+  background: #ffffff;
   z-index: 1;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.04);
 }
 
 tr:hover .sticky-col {
-  background: #0f1d35;
+  background: #f1f5f9;
 }
 
-/* ── Gold starred row highlight ── */
+/* ── Starred row — gold left border on white ── */
 .starred-row {
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.08) 0%, transparent 100%);
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.07) 0%, transparent 60%);
   border-left: 2px solid #f59e0b;
 }
 
 /* ── Tab bar ── */
 .tab-bar {
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
-/* ── Score card scroll ── */
+/* ── Score card scroll — hide scrollbar ── */
 .score-scroll {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -111,23 +126,23 @@ tr:hover .sticky-col {
   display: none;
 }
 
-/* ── Button focus states ── */
+/* ── Focus states ── */
 button:focus-visible {
   outline: 2px solid #f59e0b;
   outline-offset: 2px;
 }
 
-/* ── Grade badge ── */
-.grade-A { color: #4ade80; }
-.grade-B { color: #60a5fa; }
-.grade-C { color: #f59e0b; }
-.grade-D { color: #fb923c; }
-.grade-F { color: #f87171; }
+/* ── Grade badge classes ── */
+.grade-A { color: #16a34a; }
+.grade-B { color: #1d4ed8; }
+.grade-C { color: #d97706; }
+.grade-D { color: #ea580c; }
+.grade-F { color: #dc2626; }
 
-/* ── Heat indicators ── */
-.heat-hot  { color: #4ade80; }
-.heat-warm { color: #f59e0b; }
-.heat-cold { color: #f87171; }
+/* ── Heat tier dot glow ── */
+.heat-glow-1 {
+  box-shadow: 0 0 6px #16a34a;
+}
 
 /* ── Responsive table wrapper ── */
 .table-scroll-wrapper {
@@ -135,24 +150,49 @@ button:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ── Sort caret ── */
-.sort-asc::after  { content: ' ↑'; opacity: 0.7; }
-.sort-desc::after { content: ' ↓'; opacity: 0.7; }
-
-/* ── Input / Select dark style ── */
-.form-input-dark {
-  background: #0f1d35;
-  border: 1px solid #162444;
-  color: #f1f5f9;
+/* ── Form inputs — light theme ── */
+.form-input-light {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 13px;
   outline: none;
   transition: border-color 0.15s;
 }
-.form-input-dark:focus {
+.form-input-light:focus {
   border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
 }
-.form-input-dark option {
-  background: #0a1222;
+.form-input-light option {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+/* ── Card shadow ── */
+.card-shadow {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.card-shadow-md {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* ── Animate in ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* ── Mobile filter drawer ── */
+.filter-drawer {
+  animation: slideDown 0.2s ease-out;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
