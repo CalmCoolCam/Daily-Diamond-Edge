@@ -40,12 +40,11 @@ function ScoreCard({ game, selected, onClick }) {
         ${selected
           ? 'border-amber-400 bg-amber-50 shadow-[0_0_0_2px_rgba(245,158,11,0.2)]'
           : status.live
-            ? 'border-t-2 border-t-blue-500 border-x-slate-200 border-b-slate-200 bg-white card-shadow hover:border-blue-400'
-            : status.final
-              ? 'border-slate-200 bg-white card-shadow hover:border-slate-300'
-              : 'border-slate-200 bg-white card-shadow hover:border-amber-300'
+            ? 'border-t-2 border-t-blue-500 bg-[var(--bg-card)] card-shadow hover:border-blue-400'
+            : 'bg-[var(--bg-card)] border-[var(--border)] card-shadow hover:border-amber-300'
         }
       `}
+      style={selected ? {} : { borderColor: status.live ? undefined : 'var(--border)' }}
       aria-label={`${away?.team?.abbreviation} at ${home?.team?.abbreviation}`}
     >
       {/* Status row */}
@@ -55,13 +54,13 @@ function ScoreCard({ game, selected, onClick }) {
             <span className="live-dot w-1.5 h-1.5 bg-green-500 rounded-full inline-block flex-shrink-0" />
           )}
           <span className={`text-[10px] font-semibold ${
-            status.live ? 'text-green-600' : status.final ? 'text-slate-400' : 'text-blue-600'
+            status.live ? 'text-green-600' : status.final ? 'text-[var(--text-muted)]' : 'text-blue-600'
           }`}>
             {status.label}
           </span>
         </div>
         {status.outs && (
-          <span className="text-[9px] text-slate-400">{status.outs}</span>
+          <span className="text-[9px] text-[var(--text-muted)]">{status.outs}</span>
         )}
       </div>
 
@@ -69,10 +68,12 @@ function ScoreCard({ game, selected, onClick }) {
       <div className="flex items-center justify-between mb-0.5">
         <div className="flex items-center gap-1.5">
           <TeamBadge abbr={away?.team?.abbreviation} size="xs" />
-          <span className="text-xs text-slate-500">{away?.team?.abbreviation}</span>
+          <span className="text-xs text-[var(--text-secondary)]">{away?.team?.abbreviation}</span>
         </div>
         {hasScore && (
-          <span className={`text-sm font-bold tabular-nums ${awayScore > homeScore ? 'text-slate-900' : 'text-slate-400'}`}>
+          <span className={`text-sm font-bold tabular-nums ${
+            awayScore > homeScore ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'
+          }`}>
             {awayScore}
           </span>
         )}
@@ -82,10 +83,12 @@ function ScoreCard({ game, selected, onClick }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <TeamBadge abbr={home?.team?.abbreviation} size="xs" />
-          <span className="text-xs text-slate-500">{home?.team?.abbreviation}</span>
+          <span className="text-xs text-[var(--text-secondary)]">{home?.team?.abbreviation}</span>
         </div>
         {hasScore && (
-          <span className={`text-sm font-bold tabular-nums ${homeScore > awayScore ? 'text-slate-900' : 'text-slate-400'}`}>
+          <span className={`text-sm font-bold tabular-nums ${
+            homeScore > awayScore ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'
+          }`}>
             {homeScore}
           </span>
         )}
@@ -98,7 +101,7 @@ export default function ScoreCards({ games, loading, error, onRetry, selectedGam
   const scrollRef = useRef(null)
 
   return (
-    <div className="bg-white border-b border-slate-200">
+    <div className="bg-[var(--bg-card)] border-b border-[var(--border)] transition-colors">
       <div
         ref={scrollRef}
         className="score-scroll flex gap-3 px-4 py-3 overflow-x-auto"
@@ -116,7 +119,7 @@ export default function ScoreCards({ games, loading, error, onRetry, selectedGam
         )}
 
         {!loading && !error && games?.length === 0 && (
-          <div className="flex items-center text-sm text-slate-400 py-3">
+          <div className="flex items-center text-sm text-[var(--text-muted)] py-3">
             No games scheduled today
           </div>
         )}

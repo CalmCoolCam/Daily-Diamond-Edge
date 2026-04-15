@@ -4,7 +4,6 @@ import Header from '@/components/Header'
 import ScoreCards from '@/components/ScoreCards'
 import TabNav from '@/components/TabNav'
 import PregameTab from '@/components/pregame/PregameTab'
-import LiveTab from '@/components/live/LiveTab'
 import LeaderboardTab from '@/components/leaderboard/LeaderboardTab'
 import MyPicks from '@/components/MyPicks'
 import { useStars } from '@/hooks/useStars'
@@ -176,7 +175,7 @@ export default function App() {
     fetchData(true)
 
     intervalRef.current = setInterval(() => {
-      if (activeTab === 'live' || isLiveRef.current) {
+      if (isLiveRef.current) {
         fetchData(false)
       }
     }, REFRESH_MS)
@@ -203,7 +202,9 @@ export default function App() {
         const ids = batch.map((p) => p.id).filter(Boolean)
         if (!ids.length) continue
 
-        const cacheKey = `batch_${season}_${ids.slice(0, 3).join('-')}`
+        // Cache key includes today's date so results expire daily (not just by TTL)
+        const todayDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+        const cacheKey = `batch_${season}_${todayDate}_${ids.slice(0, 3).join('-')}`
         let result = getCached(cacheKey)
 
         if (!result) {
@@ -228,12 +229,23 @@ export default function App() {
           const gameLog = statsArr.find((s) => s.type?.displayName === 'gameLog')
 
           const ss = seasonStat?.splits?.[0]?.stat || {}
+          // Game log splits: all entries within the 7-day calendar window
+          // (startDate = today-7 CST, endDate = yesterday CST — set by batch route)
+          // Each split is ONE game. Sum ALL entries for the 7-day total.
+          // Doubleheader games on the same day each get their own split entry.
+          // Field path: splits[].stat.hits + stat.runs (NOT homeRuns) + stat.rbi
           const logSplits = gameLog?.splits || []
 
-          const sparklineInput = logSplits.slice(0, 7).map((s) => ({ stat: s.stat }))
-          const sparkline = extractSparklineData(sparklineInput)
-          const last7Total = sparkline.reduce((a, b) => a + b, 0)
-          // Yesterday = most recent game log entry (logSplits[0])
+          // Pass ALL splits in the window — date range already limits to 7 days
+          const sparklineInput = logSplits.map((s) => ({ stat: s.stat }))
+          const sparkline = extractSparklineData(sparklineInput, 7)
+          // Sum ALL splits in the window (not capped at 7 entries — handles doubleheaders)
+          const last7Total = logSplits.reduce((sum, s) => {
+            const st = s.stat || {}
+            // stat.hits + stat.runs (NOT stat.homeRuns) + stat.rbi
+            return sum + (st.hits || 0) + (st.runs || 0) + (st.rbi || 0)
+          }, 0)
+          // Yesterday = most recent game log entry (logSplits[0], most-recent-first)
           const yday = logSplits[0]?.stat || {}
 
           enriched[idx] = {
@@ -268,7 +280,7 @@ export default function App() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-[var(--bg-page)] flex flex-col transition-colors">
       <Header onOpenPicks={() => setPicksOpen(true)} activeTab={activeTab} />
 
       <ScoreCards
@@ -289,8 +301,8 @@ export default function App() {
         {!loading && error && !gamesData && (
           <div className="p-8 text-center">
             <div className="text-5xl mb-4">⚾</div>
-            <h3 className="text-xl font-semibold text-slate-800 mb-2">Couldn&apos;t load game data</h3>
-            <p className="text-sm text-slate-500 mb-4">{error}</p>
+            <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">Couldn&apos;t load game data</h3>
+            <p className="text-sm text-[var(--text-secondary)] mb-4">{error}</p>
             <button
               onClick={() => fetchData(true)}
               className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-white font-semibold rounded-lg transition-colors"
@@ -314,19 +326,6 @@ export default function App() {
                 selectedGamePk={selectedGamePk}
                 onSelectGame={setSelectedGamePk}
                 updatedIds={updatedIds}
-              />
-            )}
-
-            {activeTab === 'live' && (
-              <LiveTab
-                players={players}
-                loading={loading}
-                error={error}
-                onRetry={() => fetchData(false)}
-                stars={stars}
-                onToggleStar={handleToggleStar}
-                selectedGamePk={selectedGamePk}
-                lastRefresh={lastRefresh}
               />
             )}
 

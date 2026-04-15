@@ -5,23 +5,45 @@
 /* ── Google Fonts ── */
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&display=swap');
 
+/* ── Light mode (default) ── */
 :root {
   --font-bebas: 'Bebas Neue';
   --font-dm-sans: 'DM Sans';
 
-  /* Light theme color tokens */
   --bg-page:        #f8fafc;
   --bg-card:        #ffffff;
-  --bg-surface:     #f8fafc;
+  --bg-subtle:      #f1f5f9;
   --bg-hover:       #f1f5f9;
   --border:         #e2e8f0;
   --border-strong:  #cbd5e1;
   --text-primary:   #0f172a;
-  --text-secondary: #64748b;
+  --text-secondary: #475569;
   --text-muted:     #94a3b8;
   --accent-gold:    #f59e0b;
   --accent-blue:    #1d4ed8;
-  --accent-blue-lt: #93c5fd;
+  --card-shadow:    0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
+  --sticky-shadow:  2px 0 4px rgba(0,0,0,0.04);
+  --skeleton-from:  #e2e8f0;
+  --skeleton-via:   #f1f5f9;
+}
+
+/* ── Dark mode ── */
+:root.dark {
+  --bg-page:        #060d1a;
+  --bg-card:        #0a1222;
+  --bg-subtle:      #0f1d35;
+  --bg-hover:       #162444;
+  --border:         #1e3058;
+  --border-strong:  #2d4472;
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #64748b;
+  --accent-gold:    #f59e0b;
+  --accent-blue:    #60a5fa;
+  --card-shadow:    0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+  --sticky-shadow:  2px 0 8px rgba(0,0,0,0.3);
+  --skeleton-from:  #0f1d35;
+  --skeleton-via:   #162444;
 }
 
 /* ── Base ── */
@@ -36,9 +58,11 @@ body {
   font-family: var(--font-dm-sans), system-ui, sans-serif;
   min-height: 100vh;
   overscroll-behavior: none;
+  /* Smooth theme transition */
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* ── Shimmer skeleton animation (light theme) ── */
+/* ── Shimmer skeleton animation ── */
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
@@ -47,9 +71,9 @@ body {
 .skeleton {
   background: linear-gradient(
     90deg,
-    #e2e8f0 25%,
-    #f1f5f9 50%,
-    #e2e8f0 75%
+    var(--skeleton-from) 25%,
+    var(--skeleton-via)  50%,
+    var(--skeleton-from) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
@@ -76,39 +100,44 @@ body {
   animation: statFlash 2.5s ease-out forwards;
 }
 
-/* ── Scrollbar styling (light) ── */
+/* ── Scrollbar styling ── */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--bg-subtle);
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--border-strong);
   border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--text-muted);
 }
 
 /* ── Sticky player name column in table ── */
 .sticky-col {
   position: sticky;
   left: 0;
-  background: #ffffff;
+  background: var(--bg-card);
   z-index: 1;
-  box-shadow: 2px 0 4px rgba(0,0,0,0.04);
+  box-shadow: var(--sticky-shadow);
+  transition: background-color 0.2s ease;
 }
 
 tr:hover .sticky-col {
-  background: #f1f5f9;
+  background: var(--bg-hover);
 }
 
-/* ── Starred row — gold left border on white ── */
+/* ── Starred row — gold left border ── */
 .starred-row {
   background: linear-gradient(90deg, rgba(245, 158, 11, 0.07) 0%, transparent 60%);
   border-left: 2px solid #f59e0b;
+}
+
+:root.dark .starred-row {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.12) 0%, transparent 60%);
 }
 
 /* ── Tab bar ── */
@@ -150,29 +179,29 @@ button:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ── Form inputs — light theme ── */
-.form-input-light {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #0f172a;
+/* ── Form inputs ── */
+.form-input {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 13px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background-color 0.2s;
 }
-.form-input-light:focus {
+.form-input:focus {
   border-color: #f59e0b;
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
 }
-.form-input-light option {
-  background: #ffffff;
-  color: #0f172a;
-}
+
+/* Legacy alias */
+.form-input-light { }
+.form-input-light:focus { }
 
 /* ── Card shadow ── */
 .card-shadow {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--card-shadow);
 }
 
 .card-shadow-md {
@@ -196,3 +225,29 @@ button:focus-visible {
   from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ── Dark mode utility overrides ── */
+/* These override Tailwind hardcoded classes that can't be replaced with CSS vars */
+:root.dark .bg-white { background-color: var(--bg-card) !important; }
+:root.dark .bg-slate-50 { background-color: var(--bg-subtle) !important; }
+:root.dark .bg-slate-100 { background-color: var(--bg-subtle) !important; }
+:root.dark .border-slate-200 { border-color: var(--border) !important; }
+:root.dark .border-slate-100 { border-color: var(--border) !important; }
+:root.dark .text-slate-900 { color: var(--text-primary) !important; }
+:root.dark .text-slate-800 { color: var(--text-primary) !important; }
+:root.dark .text-slate-700 { color: var(--text-secondary) !important; }
+:root.dark .text-slate-600 { color: var(--text-secondary) !important; }
+:root.dark .text-slate-500 { color: var(--text-secondary) !important; }
+:root.dark .text-slate-400 { color: var(--text-muted) !important; }
+:root.dark .text-slate-300 { color: var(--text-muted) !important; }
+:root.dark .hover\:bg-slate-50:hover { background-color: var(--bg-hover) !important; }
+:root.dark .hover\:bg-slate-100:hover { background-color: var(--bg-hover) !important; }
+
+/* Dark mode amber highlights */
+:root.dark .bg-amber-50 { background-color: rgba(245, 158, 11, 0.12) !important; }
+:root.dark .bg-amber-100 { background-color: rgba(245, 158, 11, 0.15) !important; }
+:root.dark .border-amber-200 { border-color: rgba(245, 158, 11, 0.3) !important; }
+:root.dark .text-slate-700.tabular-nums { color: var(--text-secondary) !important; }
+
+/* Dark modal overlay */
+:root.dark .bg-black\/50 { background-color: rgba(0, 0, 0, 0.7) !important; }
