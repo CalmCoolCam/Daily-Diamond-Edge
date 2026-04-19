@@ -3,10 +3,11 @@ import { useState, useMemo, useCallback } from 'react'
 import Sparkline from '../ui/Sparkline'
 import HeatDot from '../ui/HeatDot'
 import TeamBadge from '../ui/TeamBadge'
+import TeamLogo from '../ui/TeamLogo'
 import StarButton from '../StarButton'
 import { SkeletonTableRow } from '../ui/Skeleton'
 import ErrorState from '../ui/ErrorState'
-import { gradeColor, playerDisplayName } from '@/lib/mlbApi'
+import { gradeColor, gradeColorHex } from '@/lib/mlbApi'
 import { usePicks } from '@/hooks/usePicks'
 import { debounce } from '@/lib/utils'
 
@@ -93,16 +94,24 @@ function PlayerRow({ player, rank, starred, onToggleStar, updatedIds }) {
           {rank}
         </td>
 
-        {/* Player name — sticky */}
-        <td className="sticky-col px-3 py-2.5 relative" onMouseEnter={() => setShowDebug(true)} onMouseLeave={() => setShowDebug(false)}>
-          <div className="font-medium text-slate-900 text-xs truncate max-w-[140px]" title={player.name}>
-            {playerDisplayName(player.name, player.heatTier)}
+        {/* Player name — sticky, includes logo + abbr */}
+        <td className="sticky-col px-2 py-2.5 relative" onMouseEnter={() => setShowDebug(true)} onMouseLeave={() => setShowDebug(false)}>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <TeamLogo teamId={player.teamId} abbr={player.teamAbbr} size="sm" className="flex-shrink-0" />
+            <span className="font-bold text-[9px] font-mono flex-shrink-0 text-[var(--accent-blue)]">
+              {player.teamAbbr}
+            </span>
+            <div className="min-w-0">
+              <div className="font-medium text-slate-900 text-xs truncate max-w-[110px]" title={player.name}>
+                {player.heatTier === 1 ? `${player.name} 🔥` : player.name}
+              </div>
+              <div className="text-[10px] text-slate-400">{player.position}</div>
+            </div>
           </div>
-          <div className="text-[10px] text-slate-400">{player.position}</div>
           {showDebug && <DevStatDebug player={player} />}
         </td>
 
-        {/* Team — hidden on mobile */}
+        {/* Team — hidden on mobile (logo already in name cell) */}
         <td className="px-2 py-2.5 text-center hidden lg:table-cell">
           <TeamBadge abbr={player.teamAbbr} size="xs" />
         </td>
@@ -114,7 +123,10 @@ function PlayerRow({ player, rank, starred, onToggleStar, updatedIds }) {
 
         {/* Matchup Grade */}
         <td className="px-2 py-2.5 text-center">
-          <span className={`text-sm font-bold ${gradeColor(player.matchupGrade)}`}>
+          <span
+            className="text-sm font-bold tabular-nums"
+            style={{ color: gradeColorHex(player.matchupGrade) }}
+          >
             {player.matchupGrade || '--'}
           </span>
         </td>
@@ -179,11 +191,20 @@ function PlayerRow({ player, rank, starred, onToggleStar, updatedIds }) {
             <div className="flex flex-wrap gap-4 text-xs">
               <div>
                 <span className="text-slate-400 uppercase tracking-wide text-[10px]">Team</span>
-                <div className="mt-0.5"><TeamBadge abbr={player.teamAbbr} size="xs" /></div>
+                <div className="mt-0.5 flex items-center gap-1">
+                  <TeamLogo teamId={player.teamId} abbr={player.teamAbbr} size="sm" />
+                  <TeamBadge abbr={player.teamAbbr} size="xs" />
+                </div>
               </div>
               <div>
                 <span className="text-slate-400 uppercase tracking-wide text-[10px]">Opp</span>
                 <div className="font-mono text-slate-600 mt-0.5">{player.opponentAbbr || '--'}</div>
+              </div>
+              <div>
+                <span className="text-slate-400 uppercase tracking-wide text-[10px]">Grade</span>
+                <div className="mt-0.5 font-bold text-sm" style={{ color: gradeColorHex(player.matchupGrade) }}>
+                  {player.matchupGrade || '--'}
+                </div>
               </div>
               <div>
                 <span className="text-slate-400 uppercase tracking-wide text-[10px]">Yesterday</span>
