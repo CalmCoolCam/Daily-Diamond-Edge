@@ -2,10 +2,11 @@
 import Sparkline from '../ui/Sparkline'
 import HeatDot from '../ui/HeatDot'
 import TeamBadge from '../ui/TeamBadge'
+import TeamLogo from '../ui/TeamLogo'
 import StarButton from '../StarButton'
 import { SkeletonHotCard } from '../ui/Skeleton'
 import ErrorState from '../ui/ErrorState'
-import { gradeColor, playerDisplayName } from '@/lib/mlbApi'
+import { gradeColor } from '@/lib/mlbApi'
 import { usePicks } from '@/hooks/usePicks'
 
 // ── Desktop full card ─────────────────────────────────────────────────────────
@@ -30,11 +31,12 @@ function HotPlayerCardDesktop({ player, rank, starred, onToggleStar }) {
 
       <div className="flex items-start justify-between pl-5">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm text-slate-900 truncate max-w-[140px]">
-              {playerDisplayName(player.name, player.heatTier)}
-            </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <TeamLogo teamId={player.teamId} abbr={player.teamAbbr} size="md" />
             <TeamBadge abbr={player.teamAbbr} size="xs" />
+            <span className="font-semibold text-sm text-slate-900 truncate max-w-[120px]">
+              {player.heatTier === 1 ? `${player.name} 🔥` : player.name}
+            </span>
             <span className="text-[10px] text-slate-400 font-mono">{player.position}</span>
             <HeatDot heatTier={player.heatTier} />
           </div>
@@ -91,15 +93,18 @@ function HotPlayerCardMobile({ player, starred, onToggleStar }) {
         ${starred ? 'border-amber-300 bg-amber-50' : 'bg-white border-slate-200'}
       `}
     >
-      {/* Team + heat */}
+      {/* Team logo + abbr + heat */}
       <div className="flex items-center justify-between">
-        <TeamBadge abbr={player.teamAbbr} size="xs" />
+        <div className="flex items-center gap-1">
+          <TeamLogo teamId={player.teamId} abbr={player.teamAbbr} size="sm" />
+          <TeamBadge abbr={player.teamAbbr} size="xs" />
+        </div>
         <HeatDot heatTier={player.heatTier} />
       </div>
 
       {/* Name */}
       <div className="text-xs font-semibold text-slate-900 leading-tight truncate" title={player.name}>
-        {playerDisplayName(player.name, player.heatTier)}
+        {player.heatTier === 1 ? `${player.name} 🔥` : player.name}
       </div>
 
       {/* 7-day total — large bold */}
