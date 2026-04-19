@@ -4,7 +4,7 @@ export const metadata = {
   title: 'Daily Diamond Edge',
   description: 'Your daily edge on the diamond — MLB fantasy & betting analytics',
   icons: {
-    icon: '/favicon.ico',
+    icon: '/logo.png',
   },
   openGraph: {
     title: 'Daily Diamond Edge',
