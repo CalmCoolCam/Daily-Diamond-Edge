@@ -14,14 +14,14 @@ export default function Header({ onOpenPicks }) {
         <div className="flex items-center gap-3">
           {/* Desktop */}
           <div className="hidden sm:flex items-center gap-3">
-            <img src="/logo.png" alt="Daily Diamond Edge" style={{ height: '52px', width: 'auto' }} />
+            <img src="/logo.png" alt="Daily Diamond Edge" style={{ height: '52px', width: 'auto', background: 'transparent' }} />
             <p className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">
               Your daily edge on the diamond
             </p>
           </div>
           {/* Mobile compact */}
           <div className="flex sm:hidden items-center">
-            <img src="/logo.png" alt="Daily Diamond Edge" style={{ height: '38px', width: 'auto' }} />
+            <img src="/logo.png" alt="Daily Diamond Edge" style={{ height: '38px', width: 'auto', background: 'transparent' }} />
           </div>
         </div>
 
