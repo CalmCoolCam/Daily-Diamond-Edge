@@ -15,7 +15,7 @@ import { PageSkeleton } from '@/components/ui/Skeleton'
 const REFRESH_MS = 60_000
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('pregame')
+  const [activeTab, setActiveTab] = useState('dailymatchups')
   const [picksOpen, setPicksOpen] = useState(false)
   const [selectedGamePk, setSelectedGamePk] = useState(null)
 
@@ -320,7 +320,7 @@ export default function App() {
 
         {(gamesData || !loading) && (
           <>
-            {activeTab === 'pregame' && (
+            {activeTab === 'dailymatchups' && (
               <PregameTab
                 gamesData={gamesData}
                 players={players}
