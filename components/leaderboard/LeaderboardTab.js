@@ -5,6 +5,7 @@ import TeamLogo from '../ui/TeamLogo'
 import HeatDot from '../ui/HeatDot'
 import Sparkline from '../ui/Sparkline'
 import ErrorState from '../ui/ErrorState'
+import HotPlayers from '../pregame/HotPlayers'
 import { computeCategoryTiers } from '@/lib/mlbApi'
 import { formatCSTTime, getTodayLabel } from '@/lib/utils'
 
@@ -545,6 +546,12 @@ export default function LeaderboardTab({ players, games, loading, error, onRetry
 
   const anyLive = players.some((p) => p.gameStatus === 'Live')
 
+  // Hot Players: top 5 by 7-day H+R+RBI — reuses already-enriched player data
+  const hotPlayers = useMemo(
+    () => [...players].sort((a, b) => (b.last7Total || 0) - (a.last7Total || 0)).slice(0, 5),
+    [players],
+  )
+
   return (
     <div className="p-4 space-y-3">
       {/* Header */}
@@ -564,6 +571,14 @@ export default function LeaderboardTab({ players, games, loading, error, onRetry
       </div>
 
       {error && <ErrorState message={error} onRetry={handleRefresh} compact />}
+
+      {/* Hot Players strip — above stat category tabs, reuses 7-day data already loaded */}
+      <HotPlayers
+        players={hotPlayers}
+        loading={loading}
+        starred={stars}
+        onToggleStar={onToggleStar}
+      />
 
       {/* ── Mobile: sub-toggle → single panel ── */}
       <div className="lg:hidden">

@@ -1,15 +1,225 @@
 'use client'
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import Sparkline from '../ui/Sparkline'
 import HeatDot from '../ui/HeatDot'
 import TeamBadge from '../ui/TeamBadge'
 import TeamLogo from '../ui/TeamLogo'
 import StarButton from '../StarButton'
+import PlayerHeadshot from '../ui/PlayerHeadshot'
 import { SkeletonTableRow } from '../ui/Skeleton'
 import ErrorState from '../ui/ErrorState'
-import { gradeColor, gradeColorHex } from '@/lib/mlbApi'
+import {
+  gradeColor, gradeColorHex, computeCompositeMatchupScore, scoreToGrade, currentSeason,
+} from '@/lib/mlbApi'
 import { usePicks } from '@/hooks/usePicks'
 import { debounce } from '@/lib/utils'
+import { getCached, setCached } from '@/lib/storage'
+
+// ── Matchup detail cache (module-level, day-scoped) ──────────────────────────
+
+const matchupMemCache = {}
+
+function matchupCacheKey(batterId, pitcherId) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+  return `matchup_${batterId}_${pitcherId}_${today}`
+}
+
+async function fetchMatchupDetail(batterId, pitcherId, season) {
+  const key = matchupCacheKey(batterId, pitcherId)
+  if (matchupMemCache[key]) return matchupMemCache[key]
+  const lsCached = getCached(key)
+  if (lsCached) { matchupMemCache[key] = lsCached; return lsCached }
+  const res = await fetch(`/api/mlb/matchup?batterId=${batterId}&pitcherId=${pitcherId}&season=${season}`)
+  if (!res.ok) throw new Error(`Matchup fetch failed: ${res.status}`)
+  const data = await res.json()
+  setCached(key, data, 20 * 60 * 60 * 1000) // full day
+  matchupMemCache[key] = data
+  return data
+}
+
+function extractPitcherStatsFromGame(statsData) {
+  const stat = statsData?.stats?.[0]?.splits?.[0]?.stat || {}
+  return {
+    era:   stat.era               != null ? parseFloat(stat.era)               : null,
+    kPer9: stat.strikeoutsPer9Inn != null ? parseFloat(stat.strikeoutsPer9Inn) : null,
+    whip:  stat.whip              != null ? parseFloat(stat.whip)              : null,
+  }
+}
+
+function ComponentBar({ label, weight, score, missing = false }) {
+  const pct   = missing ? 0 : Math.round(score ?? 0)
+  const color = pct >= 60 ? '#16a34a' : pct >= 40 ? '#f59e0b' : '#dc2626'
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center justify-between text-[10px]">
+        <span className="text-slate-500 truncate pr-1">{label}</span>
+        <span className="text-slate-400 font-mono flex-shrink-0">{weight}% · {missing ? 'N/A' : `${pct}/100`}</span>
+      </div>
+      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+    </div>
+  )
+}
+
+function buildDropdownSummary(grade, vsPlayer, lastStartsAvg, last7Total) {
+  const desc = { A: 'Strong matchup', B: 'Favorable matchup', C: 'Average matchup', D: 'Tough matchup', F: 'Very tough matchup' }
+  const parts = [desc[grade] || 'Matchup data']
+  if (vsPlayer?.sufficient && vsPlayer.ab > 0) {
+    parts.push(`${vsPlayer.h} for ${vsPlayer.ab} vs this starter${vsPlayer.hr > 0 ? `, ${vsPlayer.hr} HR` : ''}`)
+  } else if (last7Total > 0) {
+    parts.push(`batter has ${last7Total} H+R+RBI over last 7 days`)
+  }
+  if (lastStartsAvg?.era != null) {
+    if (lastStartsAvg.era > 4.5) parts.push(`pitcher has struggled recently (${parseFloat(lastStartsAvg.era).toFixed(2)} ERA last 3)`)
+    else if (lastStartsAvg.era < 3.0) parts.push(`pitcher is sharp recently (${parseFloat(lastStartsAvg.era).toFixed(2)} ERA last 3)`)
+  }
+  return parts.length > 1 ? `${parts[0]} — ${parts.slice(1).join(', ')}.` : `${parts[0]}.`
+}
+
+// ── Player expanded dropdown ──────────────────────────────────────────────────
+
+function PlayerDropdown({ player, games }) {
+  const [detail, setDetail]     = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const season = currentSeason()
+
+  // Find this player's opposing pitcher from the games list
+  const game = games?.find((g) => g.gamePk === player.gamePk)
+  const pitcher = player.isHome
+    ? game?.teams?.away?.probablePitcher
+    : game?.teams?.home?.probablePitcher
+  const pitcherStats = player.isHome
+    ? extractPitcherStatsFromGame(game?.awayPitcherStats)
+    : extractPitcherStatsFromGame(game?.homePitcherStats)
+  const pitcherId = pitcher?.id
+
+  // Auto-fetch matchup detail when dropdown opens
+  useEffect(() => {
+    if (!pitcherId || !player.id || detail) return
+    let cancelled = false
+    setDetailLoading(true)
+    fetchMatchupDetail(player.id, pitcherId, season)
+      .then((d) => { if (!cancelled) setDetail(d) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setDetailLoading(false) })
+    return () => { cancelled = true }
+  }, [pitcherId, player.id, season, detail])
+
+  // Compute composite grade + component breakdown
+  const lastStartsAvg = detail?.lastStarts?.length > 0 ? {
+    era:   detail.lastStarts.reduce((s, x) => s + (parseFloat(x.era)  || 4.5), 0) / detail.lastStarts.length,
+    whip:  detail.lastStarts.reduce((s, x) => s + (parseFloat(x.whip) || 1.3), 0) / detail.lastStarts.length,
+    kPer9: null,
+  } : null
+
+  const vsPlayer = detail?.vsPlayer || null
+
+  const { score, components } = computeCompositeMatchupScore({
+    starterSeason: pitcherStats.era != null ? pitcherStats : null,
+    batterForm:    player.last7Total || 0,
+    bullpenERA:    4.5,
+    lastStartsAvg,
+    vsPlayer,
+  })
+
+  const grade   = scoreToGrade(score, [])
+  const summary = buildDropdownSummary(grade, vsPlayer, lastStartsAvg, player.last7Total || 0)
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-1">
+      {/* Left: headshot + identity */}
+      <div className="flex items-start gap-3">
+        <PlayerHeadshot
+          personId={player.id}
+          name={player.name}
+          teamAbbr={player.teamAbbr}
+          height={80}
+          className="flex-shrink-0"
+        />
+        <div className="min-w-0">
+          <div className="font-bold text-sm text-slate-900 leading-tight">{player.name}</div>
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            <TeamLogo teamId={player.teamId} abbr={player.teamAbbr} size="sm" />
+            <span className="text-xs text-slate-500 font-mono">{player.teamAbbr}</span>
+            <span className="text-xs text-slate-400">· {player.position}</span>
+          </div>
+          {pitcher && (
+            <div className="text-[10px] text-slate-400 mt-1">
+              vs <span className="font-medium">{pitcher.fullName}</span>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-3 mt-2 text-xs">
+            <span className="text-slate-400">
+              7-Day: <span className="font-bold text-amber-500">{player.last7Total ?? 0}</span>
+            </span>
+            <span className="text-slate-400">
+              Season: <span className="font-medium text-slate-600">
+                {player.seasonH}H / {player.seasonR}R / {player.seasonRBI}RBI
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Right: grade letter + summary + 5-component breakdown */}
+      <div>
+        <div className="flex items-center gap-3 mb-2.5">
+          <span
+            className="text-4xl font-black leading-none flex-shrink-0"
+            style={{ fontFamily: "'Bebas Neue', sans-serif", color: gradeColorHex(grade) }}
+          >
+            {grade}
+          </span>
+          <p className="text-[11px] text-slate-500 italic leading-snug">{summary}</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <ComponentBar
+            label={`vs ${pitcher?.fullName?.split(' ').pop() || 'Starter'} (lifetime)`}
+            weight={30}
+            score={components.h2h?.score}
+            missing={!components.h2h?.sufficient && components.h2h?.score == null}
+          />
+          <ComponentBar
+            label={`Starter ERA ${pitcherStats.era?.toFixed(2) ?? '--'} / K9 ${pitcherStats.kPer9?.toFixed(1) ?? '--'} / WHIP ${pitcherStats.whip?.toFixed(2) ?? '--'}`}
+            weight={25}
+            score={components.starter?.score}
+          />
+          <ComponentBar
+            label={`Batter 7-day form (${player.last7Total ?? 0} H+R+RBI)`}
+            weight={25}
+            score={components.batterForm?.score}
+          />
+          <ComponentBar label="Bullpen ERA" weight={15} score={components.bullpen?.score} />
+          <ComponentBar
+            label="Pitcher last 3 starts"
+            weight={5}
+            score={components.lastStarts?.score}
+            missing={components.lastStarts?.score == null}
+          />
+        </div>
+
+        {/* h2h detail */}
+        {vsPlayer && (
+          <div className="mt-2 text-[10px] text-slate-500 bg-slate-50 rounded-lg px-2 py-1.5">
+            <span className="font-semibold">Career vs starter: </span>
+            {vsPlayer.sufficient
+              ? `${vsPlayer.h} for ${vsPlayer.ab}${vsPlayer.hr > 0 ? `, ${vsPlayer.hr} HR` : ''}${vsPlayer.rbi > 0 ? `, ${vsPlayer.rbi} RBI` : ''} (.${(vsPlayer.h / vsPlayer.ab).toFixed(3).slice(2)})`
+              : vsPlayer.ab > 0 ? `${vsPlayer.ab} AB — insufficient sample (<5 AB)`
+              : 'No career matchup data'}
+          </div>
+        )}
+
+        {detailLoading && (
+          <div className="mt-2 text-[10px] text-slate-400 animate-pulse">Loading matchup detail…</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const SORT_DEFAULTS = { key: 'last7Total', dir: 'desc' }
 
@@ -71,7 +281,7 @@ function DevStatDebug({ player }) {
   )
 }
 
-function PlayerRow({ player, rank, starred, onToggleStar, updatedIds }) {
+function PlayerRow({ player, rank, starred, onToggleStar, updatedIds, games }) {
   const [expanded, setExpanded] = useState(false)
   const [showDebug, setShowDebug] = useState(false)
   const { getCount } = usePicks()
@@ -184,45 +394,11 @@ function PlayerRow({ player, rank, starred, onToggleStar, updatedIds }) {
         </td>
       </tr>
 
-      {/* Mobile expanded row — full stat detail */}
+      {/* Expanded dropdown — headshot + grade breakdown, shown on all screen sizes */}
       {expanded && (
-        <tr className="lg:hidden border-b border-slate-100 bg-slate-50">
-          <td colSpan={5} className="px-4 py-3">
-            <div className="flex flex-wrap gap-4 text-xs">
-              <div>
-                <span className="text-slate-400 uppercase tracking-wide text-[10px]">Team</span>
-                <div className="mt-0.5 flex items-center gap-1">
-                  <TeamLogo teamId={player.teamId} abbr={player.teamAbbr} size="sm" />
-                  <TeamBadge abbr={player.teamAbbr} size="xs" />
-                </div>
-              </div>
-              <div>
-                <span className="text-slate-400 uppercase tracking-wide text-[10px]">Opp</span>
-                <div className="font-mono text-slate-600 mt-0.5">{player.opponentAbbr || '--'}</div>
-              </div>
-              <div>
-                <span className="text-slate-400 uppercase tracking-wide text-[10px]">Grade</span>
-                <div className="mt-0.5 font-bold text-sm" style={{ color: gradeColorHex(player.matchupGrade) }}>
-                  {player.matchupGrade || '--'}
-                </div>
-              </div>
-              <div>
-                <span className="text-slate-400 uppercase tracking-wide text-[10px]">Yesterday</span>
-                <div className="font-mono text-slate-600 mt-0.5">
-                  {player.yesterdayH ?? 0}H / {player.yesterdayR ?? 0}R / {player.yesterdayRBI ?? 0}RBI
-                </div>
-              </div>
-              <div>
-                <span className="text-slate-400 uppercase tracking-wide text-[10px]">Season</span>
-                <div className="font-mono text-slate-600 mt-0.5">
-                  {player.seasonH ?? 0}H / {player.seasonR ?? 0}R / {player.seasonRBI ?? 0}RBI
-                </div>
-              </div>
-              <div>
-                <span className="text-slate-400 uppercase tracking-wide text-[10px]">Heat</span>
-                <div className="mt-1"><HeatDot heatTier={player.heatTier} showLabel /></div>
-              </div>
-            </div>
+        <tr className="border-b border-slate-100 bg-slate-50/80 filter-drawer">
+          <td colSpan={COLS.length} className="px-4 py-4">
+            <PlayerDropdown player={player} games={games} />
           </td>
         </tr>
       )}
@@ -410,6 +586,7 @@ export default function PlayerTable({ players, loading, error, onRetry, stars, o
                 starred={stars.includes(String(player.id))}
                 onToggleStar={onToggleStar}
                 updatedIds={updatedIds}
+                games={games}
               />
             ))}
           </tbody>
