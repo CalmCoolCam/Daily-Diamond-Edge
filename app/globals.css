@@ -251,3 +251,55 @@ button:focus-visible {
 
 /* Dark modal overlay */
 :root.dark .bg-black\/50 { background-color: rgba(0, 0, 0, 0.7) !important; }
+
+/* ── Pitcher stat box — dark mode aware ── */
+.stat-box {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  padding: 8px;
+}
+:root.dark .stat-box {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.stat-box-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+:root.dark .stat-box-label {
+  color: #94a3b8;
+}
+
+.stat-box-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #1e293b;
+  line-height: 1.4;
+}
+:root.dark .stat-box-name {
+  color: #f1f5f9;
+}
+
+.stat-box-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+:root.dark .stat-box-value {
+  color: #f1f5f9;
+}
+
+/* ── Chevron rotation for expanded game cards ── */
+.chevron-expanded {
+  transition: transform 0.2s ease;
+  transform: rotate(90deg);
+}
+.chevron-collapsed {
+  transition: transform 0.2s ease;
+  transform: rotate(0deg);
+}
