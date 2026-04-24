@@ -1,8 +1,8 @@
 'use client'
 
 const TABS = [
-  { id: 'pregame',     label: 'Pregame',     icon: '🎯', mobileLabel: 'Pregame' },
-  { id: 'leaderboard', label: 'Leaderboard', icon: '🏆', mobileLabel: 'Board' },
+  { id: 'dailymatchups', label: 'Daily Matchups', icon: '🎯', mobileLabel: 'Matchups' },
+  { id: 'leaderboard',   label: 'Leaderboard',    icon: '🏆', mobileLabel: 'Board'    },
 ]
 
 export default function TabNav({ activeTab, onTabChange }) {
@@ -53,6 +53,7 @@ export default function TabNav({ activeTab, onTabChange }) {
               `}
               aria-selected={activeTab === tab.id}
               role="tab"
+              aria-label={tab.label}
             >
               {activeTab === tab.id && (
                 <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-amber-500 rounded-full" />
