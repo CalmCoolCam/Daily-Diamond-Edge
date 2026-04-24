@@ -13,8 +13,8 @@ function BatterIcon() {
 }
 
 const TABS = [
-  { id: 'dailymatchups', label: 'Daily Matchups', icon: '🎯', mobileLabel: 'Matchups' },
   { id: 'leaderboard',   label: 'Leaderboard',    icon: '🏆', mobileLabel: 'Board'    },
+  { id: 'dailymatchups', label: 'Daily Matchups', icon: '🎯', mobileLabel: 'Matchups' },
   { id: 'players',       label: 'Player List',    icon: <BatterIcon />, mobileLabel: 'Players' },
 ]
 
