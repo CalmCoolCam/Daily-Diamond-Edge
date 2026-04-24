@@ -5,6 +5,7 @@ import ScoreCards from '@/components/ScoreCards'
 import TabNav from '@/components/TabNav'
 import PregameTab from '@/components/pregame/PregameTab'
 import LeaderboardTab from '@/components/leaderboard/LeaderboardTab'
+import PlayerTable from '@/components/pregame/PlayerTable'
 import MyPicks from '@/components/MyPicks'
 import { useStars } from '@/hooks/useStars'
 import { usePicks } from '@/hooks/usePicks'
@@ -15,7 +16,7 @@ import { PageSkeleton } from '@/components/ui/Skeleton'
 const REFRESH_MS = 60_000
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dailymatchups')
+  const [activeTab, setActiveTab] = useState('leaderboard')
   const [picksOpen, setPicksOpen] = useState(false)
   const [selectedGamePk, setSelectedGamePk] = useState(null)
 
@@ -346,6 +347,22 @@ export default function App() {
                 onToggleStar={handleToggleStar}
                 selectedGamePk={selectedGamePk}
               />
+            )}
+
+            {activeTab === 'playerlist' && (
+              <div className="px-3 lg:px-6 pt-4">
+                <PlayerTable
+                  players={players}
+                  loading={loading}
+                  error={error}
+                  onRetry={() => fetchData(true)}
+                  stars={stars}
+                  onToggleStar={handleToggleStar}
+                  selectedGamePk={null}
+                  updatedIds={updatedIds}
+                  games={scheduleGames}
+                />
+              </div>
             )}
           </>
         )}
