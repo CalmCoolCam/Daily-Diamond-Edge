@@ -33,10 +33,14 @@ function extractBattingStats(playersObj) {
     // Using stats.batting (game stats), NOT seasonStats.batting (season totals)
     const batting = player?.stats?.batting || {}
     result[pid] = {
-      h:  batting.hits   || 0,  // H  — stat.hits   (NOT homeRuns)
-      r:  batting.runs   || 0,  // R  — stat.runs   (NOT homeRuns)
-      rbi: batting.rbi   || 0,  // RBI — stat.rbi
-      ab: batting.atBats || 0,
+      h:   batting.hits         || 0,  // H   — stat.hits   (NOT homeRuns)
+      r:   batting.runs         || 0,  // R   — stat.runs   (NOT homeRuns)
+      rbi: batting.rbi          || 0,  // RBI — stat.rbi
+      ab:  batting.atBats       || 0,
+      hr:  batting.homeRuns     || 0,  // HR  — home runs
+      bb:  batting.baseOnBalls  || 0,  // BB  — walks
+      sb:  batting.stolenBases  || 0,  // SB  — stolen bases
+      so:  batting.strikeOuts   || 0,  // SO  — strikeouts (batter)
     }
   }
   return result
