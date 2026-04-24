@@ -235,6 +235,9 @@ const COLS = [
   { key: 'seasonH',      label: 'H',          sortable: true,  w: 'w-12',         align: 'center' },
   { key: 'seasonR',      label: 'R',          sortable: true,  w: 'w-12',         align: 'center' },
   { key: 'seasonRBI',    label: 'RBI',        sortable: true,  w: 'w-12',         align: 'center' },
+  { key: 'seasonHR',     label: 'HR',         sortable: true,  w: 'w-12',         align: 'center' },
+  { key: 'seasonAVG',    label: 'AVG',        sortable: true,  w: 'w-16',         align: 'center' },
+  { key: 'seasonOPS',    label: 'OPS',        sortable: true,  w: 'w-16',         align: 'center' },
   { key: 'seasonTotal',  label: 'S.Total',    sortable: true,  w: 'w-16',         align: 'center' },
   { key: 'trend',        label: 'Trend',      sortable: false, w: 'w-20',         align: 'center' },
   { key: 'heat',         label: '🌡',          sortable: false, w: 'w-10',         align: 'center' },
@@ -362,6 +365,15 @@ function PlayerRow({ player, rank, starred, onToggleStar, updatedIds, games }) {
         </td>
         <td className="px-2 py-2.5 text-center hidden lg:table-cell">
           <span className="text-xs text-slate-600 tabular-nums">{player.seasonRBI ?? 0}</span>
+        </td>
+        <td className="px-2 py-2.5 text-center hidden lg:table-cell">
+          <span className="text-xs text-slate-600 tabular-nums">{player.seasonHR ?? 0}</span>
+        </td>
+        <td className="px-2 py-2.5 text-center hidden lg:table-cell">
+          <span className="text-xs text-slate-500 tabular-nums font-mono">{player.seasonAVG ?? '--'}</span>
+        </td>
+        <td className="px-2 py-2.5 text-center hidden lg:table-cell">
+          <span className="text-xs text-slate-500 tabular-nums font-mono">{player.seasonOPS ?? '--'}</span>
         </td>
         <td className="px-2 py-2.5 text-center hidden lg:table-cell">
           <span className="text-xs font-semibold text-slate-700 tabular-nums">{player.seasonTotal ?? 0}</span>

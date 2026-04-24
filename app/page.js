@@ -5,6 +5,7 @@ import ScoreCards from '@/components/ScoreCards'
 import TabNav from '@/components/TabNav'
 import PregameTab from '@/components/pregame/PregameTab'
 import LeaderboardTab from '@/components/leaderboard/LeaderboardTab'
+import PlayerListTab from '@/components/players/PlayerListTab'
 import MyPicks from '@/components/MyPicks'
 import { useStars } from '@/hooks/useStars'
 import { usePicks } from '@/hooks/usePicks'
@@ -15,7 +16,7 @@ import { PageSkeleton } from '@/components/ui/Skeleton'
 const REFRESH_MS = 60_000
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dailymatchups')
+  const [activeTab, setActiveTab] = useState('leaderboard')
   const [picksOpen, setPicksOpen] = useState(false)
   const [selectedGamePk, setSelectedGamePk] = useState(null)
 
@@ -92,7 +93,7 @@ export default function App() {
             todaySO:  livePlayerStats.so  || 0,
             // Season stats & game log populated via enrichment
             heatTier: 4,
-            seasonH: 0, seasonR: 0, seasonRBI: 0, seasonTotal: 0,
+            seasonH: 0, seasonR: 0, seasonRBI: 0, seasonHR: 0, seasonAVG: null, seasonOPS: null, seasonTotal: 0,
             sparkline: [], last7Total: 0,
             last7Hits: 0, last7Runs: 0, last7HR: 0, last7BB: 0, last7SB: 0, last7SO: 0,
             yesterdayH: 0, yesterdayR: 0, yesterdayRBI: 0,
@@ -248,9 +249,12 @@ export default function App() {
 
           enriched[idx] = {
             ...enriched[idx],
-            seasonH:     ss.hits || 0,
-            seasonR:     ss.runs || 0,
-            seasonRBI:   ss.rbi  || 0,
+            seasonH:     ss.hits      || 0,
+            seasonR:     ss.runs      || 0,
+            seasonRBI:   ss.rbi       || 0,
+            seasonHR:    ss.homeRuns  || 0,
+            seasonAVG:   ss.avg       || null,
+            seasonOPS:   ss.ops       || null,
             seasonTotal: (ss.hits || 0) + (ss.runs || 0) + (ss.rbi || 0),
             sparkline,
             last7Total,
@@ -345,6 +349,20 @@ export default function App() {
                 stars={stars}
                 onToggleStar={handleToggleStar}
                 selectedGamePk={selectedGamePk}
+              />
+            )}
+
+            {activeTab === 'players' && (
+              <PlayerListTab
+                players={players}
+                games={scheduleGames}
+                loading={loading}
+                error={error}
+                onRetry={() => fetchData(true)}
+                stars={stars}
+                onToggleStar={handleToggleStar}
+                selectedGamePk={selectedGamePk}
+                updatedIds={updatedIds}
               />
             )}
           </>

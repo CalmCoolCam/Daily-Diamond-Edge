@@ -1,8 +1,21 @@
 'use client'
 
+function BatterIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" width="20" height="20" aria-hidden="true">
+      <circle cx="10" cy="3" r="2" />
+      <path d="M7.5 6h5l.8 3.5H6.7L7.5 6z" />
+      <path d="M6.7 9.5l-.8 4h1.5l.5-2h4.2l.5 2h1.5l-.8-4H6.7z" />
+      <path d="M9 13.5v4h2v-4H9z" />
+      <path d="M13.5 7.5l4.5-2.5-.6-1.2-4.5 2.5.6 1.2z" />
+    </svg>
+  )
+}
+
 const TABS = [
   { id: 'dailymatchups', label: 'Daily Matchups', icon: '🎯', mobileLabel: 'Matchups' },
   { id: 'leaderboard',   label: 'Leaderboard',    icon: '🏆', mobileLabel: 'Board'    },
+  { id: 'players',       label: 'Player List',    icon: <BatterIcon />, mobileLabel: 'Players' },
 ]
 
 export default function TabNav({ activeTab, onTabChange }) {
@@ -58,7 +71,7 @@ export default function TabNav({ activeTab, onTabChange }) {
               {activeTab === tab.id && (
                 <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-amber-500 rounded-full" />
               )}
-              <span className="text-xl leading-none">{tab.icon}</span>
+              <span className="text-xl leading-none flex items-center justify-center">{tab.icon}</span>
               <span className="text-[10px] font-medium tracking-wide">{tab.mobileLabel}</span>
             </button>
           ))}
