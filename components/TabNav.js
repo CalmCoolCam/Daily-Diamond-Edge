@@ -1,8 +1,32 @@
 'use client'
 
+function BatterIcon() {
+  return (
+    <svg
+      width="22" height="22" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {/* Head */}
+      <circle cx="15" cy="4" r="2" fill="currentColor" stroke="none" />
+      {/* Helmet brim */}
+      <path d="M12.5 3.5 L17.5 3.5" strokeWidth="1" />
+      {/* Body */}
+      <path d="M15 6 C14.5 7.5 13.5 9 13 11 L11.5 16 L10 21" />
+      <path d="M13 11 L15 15 L16.5 21" />
+      {/* Back arm + bat */}
+      <path d="M14.5 8.5 L12 9.5 L4 7" />
+      {/* Front arm */}
+      <path d="M14.5 8.5 L16.5 9.5 L17 11" />
+    </svg>
+  )
+}
+
 const TABS = [
-  { id: 'pregame',     label: 'Pregame',     icon: '🎯', mobileLabel: 'Pregame' },
   { id: 'leaderboard', label: 'Leaderboard', icon: '🏆', mobileLabel: 'Board' },
+  { id: 'matchups',    label: 'Matchups',    icon: '🎯', mobileLabel: 'Matchups' },
+  { id: 'players',     label: 'Players',     icon: null,  mobileLabel: 'Players', svgIcon: true },
 ]
 
 export default function TabNav({ activeTab, onTabChange }) {
@@ -26,7 +50,13 @@ export default function TabNav({ activeTab, onTabChange }) {
               aria-selected={activeTab === tab.id}
               role="tab"
             >
-              <span>{tab.icon}</span>
+              {tab.svgIcon ? (
+                <span className={activeTab === tab.id ? 'text-amber-500' : ''}>
+                  <BatterIcon />
+                </span>
+              ) : (
+                <span>{tab.icon}</span>
+              )}
               <span style={{ fontFamily: "'Bebas Neue', sans-serif" }} className="text-base tracking-widest">
                 {tab.label}
               </span>
@@ -57,7 +87,9 @@ export default function TabNav({ activeTab, onTabChange }) {
               {activeTab === tab.id && (
                 <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-amber-500 rounded-full" />
               )}
-              <span className="text-xl leading-none">{tab.icon}</span>
+              <span className="text-xl leading-none flex items-center justify-center">
+                {tab.svgIcon ? <BatterIcon /> : tab.icon}
+              </span>
               <span className="text-[10px] font-medium tracking-wide">{tab.mobileLabel}</span>
             </button>
           ))}

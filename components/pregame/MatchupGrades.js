@@ -18,8 +18,8 @@ function extractPitcherStats(statsData) {
 function StatPill({ label, value }) {
   return (
     <div className="text-center">
-      <div className="text-[9px] text-slate-400 uppercase tracking-wider">{label}</div>
-      <div className="text-xs font-semibold text-slate-700 tabular-nums">{value}</div>
+      <div className="stat-box-label">{label}</div>
+      <div className="stat-box-value">{value}</div>
     </div>
   )
 }
@@ -43,13 +43,13 @@ function MatchupChipMobile({ game, isExpanded, onToggle }) {
           transition-all duration-150 whitespace-nowrap
           ${isExpanded
             ? 'bg-amber-50 border-amber-300 shadow-sm'
-            : 'bg-white border-slate-200 hover:border-slate-300 card-shadow'
+            : 'bg-[var(--bg-card)] border-[var(--border)] hover:border-[var(--border-strong)] card-shadow'
           }
         `}
       >
-        <span className="text-slate-500">{away?.team?.abbreviation}</span>
-        <span className="text-slate-300">@</span>
-        <span className="text-slate-500">{home?.team?.abbreviation}</span>
+        <span className="text-[var(--text-secondary)]">{away?.team?.abbreviation}</span>
+        <span className="text-[var(--text-muted)]">@</span>
+        <span className="text-[var(--text-secondary)]">{home?.team?.abbreviation}</span>
         <span className={`font-bold text-sm ml-0.5 ${gradeColor(grade)}`}
           style={{ fontFamily: "'Bebas Neue', sans-serif" }}
         >
@@ -76,9 +76,9 @@ function MatchupDetailDrawer({ game }) {
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <TeamBadge abbr={away?.team?.abbreviation} size="xs" />
-          <span className="text-xs text-slate-400">@</span>
+          <span className="text-xs text-[var(--text-muted)]">@</span>
           <TeamBadge abbr={home?.team?.abbreviation} size="xs" />
-          <span className="text-xs text-slate-400">{gameTime}</span>
+          <span className="text-xs text-[var(--text-muted)]">{gameTime}</span>
         </div>
         <span className={`text-2xl font-bold ${gradeColor(grade)}`}
           style={{ fontFamily: "'Bebas Neue', sans-serif" }}
@@ -88,13 +88,13 @@ function MatchupDetailDrawer({ game }) {
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <div className="bg-white/80 rounded-lg p-2 border border-white">
-          <div className="text-[9px] text-slate-400 uppercase tracking-wide mb-1">
+        <div className="stat-box">
+          <div className="stat-box-label mb-1">
             {away?.team?.abbreviation} Starter
           </div>
           {awayPitcher ? (
             <>
-              <div className="text-xs font-medium text-slate-800 truncate mb-1.5">
+              <div className="stat-box-name truncate mb-1.5">
                 {awayPitcher.fullName}
               </div>
               <div className="flex gap-3">
@@ -103,16 +103,16 @@ function MatchupDetailDrawer({ game }) {
                 <StatPill label="WHIP" value={awayPitcherStats.whip?.toFixed(2) || '--'} />
               </div>
             </>
-          ) : <div className="text-xs text-slate-400 italic">TBD</div>}
+          ) : <div className="stat-box-label italic">TBA</div>}
         </div>
 
-        <div className="bg-white/80 rounded-lg p-2 border border-white">
-          <div className="text-[9px] text-slate-400 uppercase tracking-wide mb-1">
+        <div className="stat-box">
+          <div className="stat-box-label mb-1">
             {home?.team?.abbreviation} Starter
           </div>
           {homePitcher ? (
             <>
-              <div className="text-xs font-medium text-slate-800 truncate mb-1.5">
+              <div className="stat-box-name truncate mb-1.5">
                 {homePitcher.fullName}
               </div>
               <div className="flex gap-3">
@@ -121,7 +121,7 @@ function MatchupDetailDrawer({ game }) {
                 <StatPill label="WHIP" value={homePitcherStats.whip?.toFixed(2) || '--'} />
               </div>
             </>
-          ) : <div className="text-xs text-slate-400 italic">TBD</div>}
+          ) : <div className="stat-box-label italic">TBA</div>}
         </div>
       </div>
     </div>
@@ -153,11 +153,11 @@ function MatchupCardDesktop({ game, selectedGamePk, onSelectGame }) {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <TeamBadge abbr={away?.team?.abbreviation} size="xs" />
-          <span className="text-xs text-slate-400">@</span>
+          <span className="text-xs text-[var(--text-muted)]">@</span>
           <TeamBadge abbr={home?.team?.abbreviation} size="xs" />
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">{gameTime}</span>
+          <span className="text-xs text-[var(--text-muted)]">{gameTime}</span>
           <span
             className={`text-2xl font-bold leading-none ${gradeColor(grade)}`}
             style={{ fontFamily: "'Bebas Neue', sans-serif" }}
@@ -168,35 +168,35 @@ function MatchupCardDesktop({ game, selectedGamePk, onSelectGame }) {
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <div className="bg-white/70 rounded-lg p-2">
-          <div className="text-[9px] text-slate-400 uppercase tracking-wide mb-1">
+        <div className="stat-box">
+          <div className="stat-box-label mb-1">
             {away?.team?.abbreviation} Starter
           </div>
           {awayPitcher ? (
             <>
-              <div className="text-xs font-medium text-slate-700 truncate mb-1.5">{awayPitcher.fullName}</div>
+              <div className="stat-box-name truncate mb-1.5">{awayPitcher.fullName}</div>
               <div className="flex gap-3">
                 <StatPill label="ERA" value={fmtERA(awayPitcherStats.era)} />
                 <StatPill label="K/9" value={awayPitcherStats.kPer9?.toFixed(1) || '--'} />
                 <StatPill label="WHIP" value={awayPitcherStats.whip?.toFixed(2) || '--'} />
               </div>
             </>
-          ) : <div className="text-xs text-slate-400 italic">TBD</div>}
+          ) : <div className="stat-box-label italic">TBA</div>}
         </div>
-        <div className="bg-white/70 rounded-lg p-2">
-          <div className="text-[9px] text-slate-400 uppercase tracking-wide mb-1">
+        <div className="stat-box">
+          <div className="stat-box-label mb-1">
             {home?.team?.abbreviation} Starter
           </div>
           {homePitcher ? (
             <>
-              <div className="text-xs font-medium text-slate-700 truncate mb-1.5">{homePitcher.fullName}</div>
+              <div className="stat-box-name truncate mb-1.5">{homePitcher.fullName}</div>
               <div className="flex gap-3">
                 <StatPill label="ERA" value={fmtERA(homePitcherStats.era)} />
                 <StatPill label="K/9" value={homePitcherStats.kPer9?.toFixed(1) || '--'} />
                 <StatPill label="WHIP" value={homePitcherStats.whip?.toFixed(2) || '--'} />
               </div>
             </>
-          ) : <div className="text-xs text-slate-400 italic">TBD</div>}
+          ) : <div className="stat-box-label italic">TBA</div>}
         </div>
       </div>
     </button>
@@ -213,7 +213,7 @@ export default function MatchupGrades({ games, loading, selectedGamePk, onSelect
     <section aria-label="Matchup Grades" className="mt-5">
       <div className="flex items-center justify-between mb-3">
         <h2
-          className="text-lg text-slate-900 tracking-wider"
+          className="text-lg text-[var(--text-primary)] tracking-wider"
           style={{ fontFamily: "'Bebas Neue', sans-serif" }}
         >
           ⚡ Matchup Grades
