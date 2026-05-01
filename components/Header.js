@@ -11,17 +11,21 @@ export default function Header({ onOpenPicks }) {
     <header className="sticky top-0 z-50 bg-[var(--bg-page)] border-b border-[var(--border)] card-shadow transition-colors">
       <div className="max-w-screen-2xl mx-auto px-4 py-2.5 flex items-center justify-between">
         {/* Brand */}
-        <div className="flex items-center gap-3" style={{ background: 'none', backgroundColor: 'transparent' }}>
+        <div className="flex items-center gap-3">
           {/* Desktop */}
-          <div className="hidden sm:flex items-center gap-3" style={{ background: 'none', backgroundColor: 'transparent' }}>
-            <img src="/logo.png" alt="Daily Diamond Edge" style={{ height: '52px', width: 'auto', background: 'none', backgroundColor: 'transparent', display: 'block' }} />
+          <div className="hidden sm:flex items-center gap-3">
+            <div style={{ background: 'inherit' }}>
+              <img src="/logo.png" alt="Daily Diamond Edge" className="mix-blend-normal" style={{ height: '52px', width: 'auto', display: 'block' }} />
+            </div>
             <p className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">
               Your daily edge on the diamond
             </p>
           </div>
           {/* Mobile compact */}
-          <div className="flex sm:hidden items-center" style={{ background: 'none', backgroundColor: 'transparent' }}>
-            <img src="/logo.png" alt="Daily Diamond Edge" style={{ height: '38px', width: 'auto', background: 'none', backgroundColor: 'transparent', display: 'block' }} />
+          <div className="flex sm:hidden items-center">
+            <div style={{ background: 'inherit' }}>
+              <img src="/logo.png" alt="Daily Diamond Edge" className="mix-blend-normal" style={{ height: '38px', width: 'auto', display: 'block' }} />
+            </div>
           </div>
         </div>
 
