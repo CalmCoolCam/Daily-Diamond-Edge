@@ -32,19 +32,25 @@ function computeEraPlus(era) {
 function statTint(val, type) {
   if (val == null) return ''
   switch (type) {
-    case 'era':     return val >= 4.50 ? 'bg-green-50 text-green-700' : val <= 3.00 ? 'bg-red-50 text-red-700' : ''
-    case 'eraPlus': return val <= 90   ? 'bg-green-50 text-green-700' : val >= 120  ? 'bg-red-50 text-red-700' : ''
-    case 'whip':    return val >= 1.40 ? 'bg-green-50 text-green-700' : val <= 1.00 ? 'bg-red-50 text-red-700' : ''
-    case 'k9':      return val <= 7.0  ? 'bg-green-50 text-green-700' : val >= 10.0 ? 'bg-red-50 text-red-700' : ''
+    case 'era':     return val >= 4.50 ? 'favorable' : val <= 3.00 ? 'unfavorable' : ''
+    case 'eraPlus': return val <= 90   ? 'favorable' : val >= 120  ? 'unfavorable' : ''
+    case 'whip':    return val >= 1.40 ? 'favorable' : val <= 1.00 ? 'unfavorable' : ''
+    case 'k9':      return val <= 7.0  ? 'favorable' : val >= 10.0 ? 'unfavorable' : ''
     default:        return ''
   }
 }
 
 function StatCell({ label, value, tint }) {
+  const bgStyle = tint === 'favorable'
+    ? { backgroundColor: 'rgba(22, 163, 74, 0.25)' }
+    : tint === 'unfavorable'
+    ? { backgroundColor: 'rgba(220, 38, 38, 0.25)' }
+    : { backgroundColor: 'var(--bg-subtle)' }
+
   return (
-    <div className={`text-center px-2 py-1.5 rounded-lg ${tint || 'bg-slate-50'}`}>
-      <div className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">{label}</div>
-      <div className="text-sm font-bold tabular-nums text-slate-800">{value ?? '--'}</div>
+    <div className="text-center px-2 py-1.5 rounded-lg" style={bgStyle}>
+      <div className="text-[9px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
+      <div className="text-sm font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>{value ?? '--'}</div>
     </div>
   )
 }
