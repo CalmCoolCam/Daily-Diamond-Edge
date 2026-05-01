@@ -293,14 +293,17 @@ export default function App() {
     <div className="min-h-screen bg-[var(--bg-page)] flex flex-col transition-colors">
       <Header onOpenPicks={() => setPicksOpen(true)} activeTab={activeTab} />
 
-      <ScoreCards
-        games={scheduleGames}
-        loading={loading}
-        error={null}
-        onRetry={() => fetchData(true)}
-        selectedGamePk={selectedGamePk}
-        onSelectGame={setSelectedGamePk}
-      />
+      {/* ScoreCards strip — hidden on Daily Matchups tab (that tab has its own vertical list) */}
+      {activeTab !== 'dailymatchups' && (
+        <ScoreCards
+          games={scheduleGames}
+          loading={loading}
+          error={null}
+          onRetry={() => fetchData(true)}
+          selectedGamePk={selectedGamePk}
+          onSelectGame={setSelectedGamePk}
+        />
+      )}
 
       {/* Tab nav — desktop top bar + mobile bottom bar */}
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
@@ -326,16 +329,11 @@ export default function App() {
           <>
             {activeTab === 'dailymatchups' && (
               <PregameTab
-                gamesData={gamesData}
                 players={players}
-                loading={loading}
-                error={error}
-                onRetry={() => fetchData(true)}
                 stars={stars}
                 onToggleStar={handleToggleStar}
                 selectedGamePk={selectedGamePk}
                 onSelectGame={setSelectedGamePk}
-                updatedIds={updatedIds}
               />
             )}
 
