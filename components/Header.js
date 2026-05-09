@@ -3,9 +3,20 @@ import { getTodayLabel } from '@/lib/utils'
 import { useStars } from '@/hooks/useStars'
 import { useTheme } from '@/hooks/useTheme'
 
-export default function Header({ onOpenPicks }) {
+export default function Header({ onOpenPicks, fgLastUpdated }) {
   const { starCount } = useStars()
   const { isDark, toggleTheme } = useTheme()
+
+  // Format the FanGraphs last-updated date (ISO string → "May 9")
+  function fmtFGDate(iso) {
+    if (!iso) return null
+    try {
+      return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    } catch {
+      return null
+    }
+  }
+  const fgDateLabel = fmtFGDate(fgLastUpdated)
 
   return (
     <header className="sticky top-0 z-50 bg-[var(--bg-page)] border-b border-[var(--border)] card-shadow transition-colors">
@@ -17,15 +28,25 @@ export default function Header({ onOpenPicks }) {
             <div style={{ background: 'inherit' }}>
               <img src="/logo.png" alt="Daily Diamond Edge" className="mix-blend-normal" style={{ height: '52px', width: 'auto', display: 'block' }} />
             </div>
-            <p className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">
-              Your daily edge on the diamond
-            </p>
+            <div className="flex flex-col gap-0.5">
+              <p className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">
+                Your daily edge on the diamond
+              </p>
+              {fgDateLabel && (
+                <p className="text-[9px] text-emerald-600 font-medium">
+                  FG Data: Updated {fgDateLabel}
+                </p>
+              )}
+            </div>
           </div>
           {/* Mobile compact */}
-          <div className="flex sm:hidden items-center">
+          <div className="flex sm:hidden items-center gap-2">
             <div style={{ background: 'inherit' }}>
               <img src="/logo.png" alt="Daily Diamond Edge" className="mix-blend-normal" style={{ height: '38px', width: 'auto', display: 'block' }} />
             </div>
+            {fgDateLabel && (
+              <span className="text-[8px] text-emerald-600 font-medium">FG {fgDateLabel}</span>
+            )}
           </div>
         </div>
 

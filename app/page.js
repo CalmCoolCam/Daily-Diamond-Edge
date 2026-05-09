@@ -9,11 +9,18 @@ import PlayerListTab from '@/components/players/PlayerListTab'
 import MyPicks from '@/components/MyPicks'
 import { useStars } from '@/hooks/useStars'
 import { usePicks } from '@/hooks/usePicks'
-import { extractSparklineData, computePlayerTiers, computeProvisionalGrade, currentSeason } from '@/lib/mlbApi'
+import {
+  extractSparklineData, computePlayerTiers, computeProvisionalGrade,
+  currentSeason, scoreToGrade, computeBatterMatchupScore, computePitcherMatchupScore,
+} from '@/lib/mlbApi'
+import {
+  getFanGraphsBatters, getFanGraphsPitchers, getTeamWrcAverages, getFanGraphsLastUpdated,
+} from '@/lib/fangraphsData'
 import { getCached, setCached } from '@/lib/storage'
 import { PageSkeleton } from '@/components/ui/Skeleton'
 
 const REFRESH_MS = 60_000
+const PITCHER_BATCH_TTL = 60 * 60 * 1000  // 1 hour
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('leaderboard')
@@ -21,19 +28,25 @@ export default function App() {
   const [selectedGamePk, setSelectedGamePk] = useState(null)
 
   // Master data state
-  const [gamesData, setGamesData] = useState(null)
-  const [players, setPlayers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [lastRefresh, setLastRefresh] = useState(null)
-  const [updatedIds, setUpdatedIds] = useState(new Set())
+  const [gamesData, setGamesData]     = useState(null)
+  const [players, setPlayers]         = useState([])
+  const [pitchers, setPitchers]       = useState([])
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState(null)
+  const [updatedIds, setUpdatedIds]   = useState(new Set())
+
+  // FanGraphs state
+  const [fgBatters, setFgBatters]       = useState({})
+  const [fgPitchers, setFgPitchers]     = useState({})
+  const [fgLastUpdated, setFgLastUpdated] = useState(null)
+  const fgLoadedRef = useRef(false)
 
   const prevPlayersRef = useRef({})
-  const intervalRef = useRef(null)
-  const isLiveRef = useRef(false)
+  const intervalRef    = useRef(null)
+  const isLiveRef      = useRef(false)
 
   // Stars + picks
-  const { stars, starCount, isStarred, toggle: toggleStar } = useStars()
+  const { stars, isStarred, toggle: toggleStar } = useStars()
   const { refresh: refreshPicks } = usePicks()
 
   function handleToggleStar(playerId, meta) {
@@ -42,47 +55,60 @@ export default function App() {
     return result
   }
 
-  // ── Build player list from raw game data + live batting stats ──────────────
+  // ── Load FanGraphs data (once per session) ──────────────────────────────────
+
+  const loadFanGraphsData = useCallback(async () => {
+    if (fgLoadedRef.current) return
+    fgLoadedRef.current = true
+    try {
+      const [batters, pitchersFG, lastUpdated] = await Promise.all([
+        getFanGraphsBatters(),
+        getFanGraphsPitchers(),
+        getFanGraphsLastUpdated(),
+      ])
+      setFgBatters(batters)
+      setFgPitchers(pitchersFG)
+      setFgLastUpdated(lastUpdated)
+    } catch {
+      // Supabase unavailable — fallback: keep empty objects, grades redistribute weights
+    }
+  }, [])
+
+  // ── Build batter list from raw game data ────────────────────────────────────
 
   function buildPlayerList(games, liveStatsGames = {}) {
     const list = []
-
     for (const game of games) {
       const homeTeam = game.teams?.home?.team
       const awayTeam = game.teams?.away?.team
       const gameStatus = game.status?.abstractGameState
-
-      // Live batting stats from /api/mlb/games/live-stats
-      const gameLive = liveStatsGames[game.gamePk] || {}
+      const gameLive   = liveStatsGames[game.gamePk] || {}
 
       for (const side of ['home', 'away']) {
-        const team     = side === 'home' ? homeTeam : awayTeam
-        const opponent = side === 'home' ? awayTeam : homeTeam
-        const roster   = side === 'home' ? game.homeRoster : game.awayRoster
-        // liveSideStats keyed by player ID string: { h, r, rbi, ab, hr, bb, sb, so }
+        const team          = side === 'home' ? homeTeam : awayTeam
+        const opponent      = side === 'home' ? awayTeam : homeTeam
+        const roster        = side === 'home' ? game.homeRoster : game.awayRoster
         const liveSideStats = side === 'home' ? (gameLive.home || {}) : (gameLive.away || {})
 
         if (!roster?.roster) continue
 
         for (const member of roster.roster) {
-          if (member.position?.abbreviation === 'P') continue
+          if (member.position?.abbreviation === 'P') continue  // batters only
 
           const pid = member.person?.id
           const livePlayerStats = liveSideStats[String(pid)] || {}
 
           list.push({
             id: pid,
-            name: member.person?.fullName || '',
-            teamId: team?.id,
-            teamAbbr: team?.abbreviation || '',
+            name:         member.person?.fullName || '',
+            teamId:       team?.id,
+            teamAbbr:     team?.abbreviation || '',
             opponentAbbr: opponent?.abbreviation || '',
-            position: member.position?.abbreviation || '',
-            gamePk: game.gamePk,
+            position:     member.position?.abbreviation || '',
+            gamePk:       game.gamePk,
             gameStatus,
-            isHome: side === 'home',
-            // Provisional grade computed after enrichment (uses last7Total + pitcher stats)
+            isHome:       side === 'home',
             matchupGrade: '--',
-            // Today: from live-stats feed (hits/runs/rbi NOT homeRuns)
             todayH:   livePlayerStats.h   || 0,
             todayR:   livePlayerStats.r   || 0,
             todayRBI: livePlayerStats.rbi || 0,
@@ -91,7 +117,6 @@ export default function App() {
             todayBB:  livePlayerStats.bb  || 0,
             todaySB:  livePlayerStats.sb  || 0,
             todaySO:  livePlayerStats.so  || 0,
-            // Season stats & game log populated via enrichment
             heatTier: 4,
             seasonH: 0, seasonR: 0, seasonRBI: 0, seasonHR: 0, seasonAVG: null, seasonOPS: null, seasonTotal: 0,
             sparkline: [], last7Total: 0,
@@ -101,19 +126,61 @@ export default function App() {
         }
       }
     }
-
     return list
   }
 
-  // ── Fetch today's game data + live batting stats ───────────────────────────
+  // ── Build pitcher list from roster data ─────────────────────────────────────
+
+  function buildPitcherList(games) {
+    const seen = new Set()
+    const list = []
+
+    for (const game of games) {
+      const homeTeam = game.teams?.home?.team
+      const awayTeam = game.teams?.away?.team
+
+      for (const side of ['home', 'away']) {
+        const team     = side === 'home' ? homeTeam : awayTeam
+        const opponent = side === 'home' ? awayTeam : homeTeam
+        const roster   = side === 'home' ? game.homeRoster : game.awayRoster
+
+        if (!roster?.roster) continue
+
+        for (const member of roster.roster) {
+          if (member.position?.abbreviation !== 'P') continue  // pitchers only
+          const pid = member.person?.id
+          if (!pid || seen.has(pid)) continue
+          seen.add(pid)
+
+          list.push({
+            id:              pid,
+            name:            member.person?.fullName || '',
+            teamId:          team?.id,
+            teamAbbr:        team?.abbreviation || '',
+            opponentAbbr:    opponent?.abbreviation || '',
+            throws:          member.person?.pitchHand?.code || null,
+            gamePk:          game.gamePk,
+            isHome:          side === 'home',
+            matchupGrade:    '--',
+            matchupScore:    null,
+            fgData:          null,
+            seasonIP:        '--',
+            last3:           [],
+            last3Avg:        null,
+            opposingTeamAbbr: opponent?.abbreviation || '',
+          })
+        }
+      }
+    }
+    return list
+  }
+
+  // ── Fetch today's game data + live batting stats ─────────────────────────────
 
   const fetchData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
-
     try {
       setError(null)
-
-      // Fetch rosters/schedule and live batting stats in parallel
       const [todayRes, liveRes] = await Promise.allSettled([
         fetch('/api/mlb/games/today'),
         fetch('/api/mlb/games/live-stats'),
@@ -126,20 +193,19 @@ export default function App() {
         throw new Error(msg)
       }
 
-      const json = await todayRes.value.json()
+      const json      = await todayRes.value.json()
       const liveStats = liveRes.status === 'fulfilled' && liveRes.value.ok
         ? await liveRes.value.json()
         : { games: {} }
 
-      isLiveRef.current = json.games?.some(
-        (g) => g.status?.abstractGameState === 'Live',
-      ) || false
+      isLiveRef.current = json.games?.some((g) => g.status?.abstractGameState === 'Live') || false
 
       setGamesData(json)
 
       const built = buildPlayerList(json.games || [], liveStats.games || {})
+      const pitcherBuilt = buildPitcherList(json.games || [])
 
-      // Detect stat changes for highlight animation
+      // Detect stat changes for animation
       const updated = new Set()
       built.forEach((p) => {
         const prev = prevPlayersRef.current[p.id]
@@ -155,7 +221,7 @@ export default function App() {
       built.forEach((p) => { prevPlayersRef.current[p.id] = p })
 
       setPlayers(built)
-      setLastRefresh(new Date())
+      setPitchers(pitcherBuilt)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -163,41 +229,44 @@ export default function App() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Initial load + periodic refresh when Live tab active or live games exist
+  // Initial load + periodic refresh
   useEffect(() => {
     fetchData(true)
-
     intervalRef.current = setInterval(() => {
-      if (isLiveRef.current) {
-        fetchData(false)
-      }
+      if (isLiveRef.current) fetchData(false)
     }, REFRESH_MS)
-
     return () => clearInterval(intervalRef.current)
   }, [fetchData, activeTab])
 
-  // ── Progressively enrich players with season stats + game logs ─────────────
+  // Load FanGraphs data on first tab switch to 'players' (or eagerly after first data load)
+  useEffect(() => {
+    if (gamesData && !fgLoadedRef.current) loadFanGraphsData()
+  }, [gamesData, loadFanGraphsData])
+
+  // Also load on players tab activation
+  useEffect(() => {
+    if (activeTab === 'players') loadFanGraphsData()
+  }, [activeTab, loadFanGraphsData])
+
+  // ── Enrich batters with season stats + game logs ────────────────────────────
 
   useEffect(() => {
     if (!players.length) return
-
-    const season = currentSeason()
-    let cancelled = false
-    const BATCH = 10
+    const season    = currentSeason()
+    let cancelled   = false
+    const BATCH     = 10
 
     async function enrich() {
       const enriched = [...players]
 
       for (let i = 0; i < enriched.length; i += BATCH) {
         if (cancelled) break
-
         const batch = enriched.slice(i, i + BATCH)
-        const ids = batch.map((p) => p.id).filter(Boolean)
+        const ids   = batch.map((p) => p.id).filter(Boolean)
         if (!ids.length) continue
 
-        // Cache key includes today's date so results expire daily (not just by TTL)
         const todayDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
-        const cacheKey = `batch_${season}_${todayDate}_${ids.slice(0, 3).join('-')}`
+        const cacheKey  = `batch_${season}_${todayDate}_${ids.slice(0, 3).join('-')}`
         let result = getCached(cacheKey)
 
         if (!result) {
@@ -206,59 +275,47 @@ export default function App() {
             if (!res.ok) continue
             result = await res.json()
             setCached(cacheKey, result)
-          } catch {
-            continue
-          }
+          } catch { continue }
         }
 
         for (const item of result?.players || []) {
           const idx = enriched.findIndex((p) => p.id === item.personId)
           if (idx === -1) continue
 
-          const statsArr = item.data?.stats || []
-          // Season stats: type=season → splits[0].stat → hits/runs/rbi
+          const statsArr  = item.data?.stats || []
           const seasonStat = statsArr.find((s) => s.type?.displayName === 'season')
-          // Game log: type=gameLog → splits[] per game, most-recent-first, NOT cumulative
-          const gameLog = statsArr.find((s) => s.type?.displayName === 'gameLog')
+          const gameLog    = statsArr.find((s) => s.type?.displayName === 'gameLog')
 
-          const ss = seasonStat?.splits?.[0]?.stat || {}
-          // Game log splits: all entries within the 7-day calendar window
-          // (startDate = today-7 CST, endDate = yesterday CST — set by batch route)
-          // Each split is ONE game. Sum ALL entries for the 7-day total.
-          // Doubleheader games on the same day each get their own split entry.
-          // Field path: splits[].stat.hits + stat.runs (NOT homeRuns) + stat.rbi
+          const ss        = seasonStat?.splits?.[0]?.stat || {}
           const logSplits = gameLog?.splits || []
 
-          // Pass ALL splits in the window — date range already limits to 7 days
           const sparklineInput = logSplits.map((s) => ({ stat: s.stat }))
-          const sparkline = extractSparklineData(sparklineInput, 7)
-          // Sum ALL splits in the window (not capped at 7 entries — handles doubleheaders)
+          const sparkline      = extractSparklineData(sparklineInput, 7)
+
           let last7Total = 0, last7Hits = 0, last7Runs = 0, last7HR = 0, last7BB = 0, last7SB = 0, last7SO = 0
           for (const s of logSplits) {
             const st = s.stat || {}
-            last7Hits  += st.hits         || 0
-            last7Runs  += st.runs         || 0
-            last7HR    += st.homeRuns     || 0
-            last7BB    += st.baseOnBalls  || 0
-            last7SB    += st.stolenBases  || 0
-            last7SO    += st.strikeOuts   || 0
+            last7Hits  += st.hits        || 0
+            last7Runs  += st.runs        || 0
+            last7HR    += st.homeRuns    || 0
+            last7BB    += st.baseOnBalls || 0
+            last7SB    += st.stolenBases || 0
+            last7SO    += st.strikeOuts  || 0
             last7Total += (st.hits || 0) + (st.runs || 0) + (st.rbi || 0)
           }
-          // Yesterday = most recent game log entry (logSplits[0], most-recent-first)
           const yday = logSplits[0]?.stat || {}
 
           enriched[idx] = {
             ...enriched[idx],
-            seasonH:     ss.hits      || 0,
-            seasonR:     ss.runs      || 0,
-            seasonRBI:   ss.rbi       || 0,
-            seasonHR:    ss.homeRuns  || 0,
-            seasonAVG:   ss.avg       || null,
-            seasonOPS:   ss.ops       || null,
+            seasonH:     ss.hits     || 0,
+            seasonR:     ss.runs     || 0,
+            seasonRBI:   ss.rbi      || 0,
+            seasonHR:    ss.homeRuns || 0,
+            seasonAVG:   ss.avg      || null,
+            seasonOPS:   ss.ops      || null,
             seasonTotal: (ss.hits || 0) + (ss.runs || 0) + (ss.rbi || 0),
             sparkline,
-            last7Total,
-            last7Hits, last7Runs, last7HR, last7BB, last7SB, last7SO,
+            last7Total, last7Hits, last7Runs, last7HR, last7BB, last7SB, last7SO,
             yesterdayH:   yday.hits || 0,
             yesterdayR:   yday.runs || 0,
             yesterdayRBI: yday.rbi  || 0,
@@ -266,16 +323,44 @@ export default function App() {
         }
 
         if (!cancelled) {
-          // Compute relative heat tiers from full enriched list (top-5 = tier 1, etc.)
-          const tiers = computePlayerTiers(enriched)
-          // Build a gamePk → game lookup for provisional grade computation
+          const tiers   = computePlayerTiers(enriched)
           const gameMap = {}
           for (const g of gamesData?.games || []) gameMap[g.gamePk] = g
-          setPlayers(enriched.map((p) => ({
-            ...p,
-            heatTier: tiers[p.id] || 4,
-            matchupGrade: computeProvisionalGrade(p, gameMap[p.gamePk]),
-          })))
+
+          // Compute batter matchup grade using FanGraphs if available
+          const allScores = enriched.map((p) => {
+            const game        = gameMap[p.gamePk]
+            if (!game) return 50
+            const isHome      = p.isHome
+            const pitcherObj  = isHome ? game.teams?.away?.probablePitcher : game.teams?.home?.probablePitcher
+            const pitcherStat = isHome
+              ? game.awayPitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
+              : game.homePitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
+            const bullpenERA = isHome
+              ? parseFloat(game.teams?.away?.team?.bullpenERA) || 4.5
+              : parseFloat(game.teams?.home?.team?.bullpenERA) || 4.5
+            const fgP = pitcherObj?.fullName ? (fgPitchers[pitcherObj.fullName] || null) : null
+            const fgB = fgBatters[p.name] || null
+            const { score } = computeBatterMatchupScore({
+              batterForm:  p.last7Total || 0,
+              batterWRC:   fgB?.wrc_plus != null  ? parseFloat(fgB.wrc_plus)  : null,
+              starterXFIP: fgP?.xfip    != null   ? parseFloat(fgP.xfip)    : null,
+              bullpenERA,
+              starterKPct: fgP?.k_pct   != null   ? parseFloat(fgP.k_pct)   : null,
+            })
+            return score
+          })
+
+          setPlayers(enriched.map((p, idx2) => {
+            const game   = gameMap[p.gamePk]
+            const grade  = game ? scoreToGrade(allScores[idx2], allScores) : '--'
+            return {
+              ...p,
+              heatTier:     tiers[p.id] || 4,
+              matchupGrade: grade,
+              matchupScore: allScores[idx2],
+            }
+          }))
         }
         await new Promise((r) => setTimeout(r, 25))
       }
@@ -283,17 +368,97 @@ export default function App() {
 
     enrich()
     return () => { cancelled = true }
-  }, [gamesData]) // Re-enrich when games data refreshes
+  }, [gamesData, fgBatters, fgPitchers]) // re-enrich when FG data arrives
+
+  // ── Enrich pitchers with season stats + last 3 starts + FanGraphs ──────────
+
+  useEffect(() => {
+    if (!pitchers.length || !gamesData) return
+    const season  = currentSeason()
+    let cancelled = false
+    const BATCH   = 10
+
+    async function enrichPitchers() {
+      const enriched = [...pitchers]
+
+      for (let i = 0; i < enriched.length; i += BATCH) {
+        if (cancelled) break
+        const batch = enriched.slice(i, i + BATCH)
+        const ids   = batch.map((p) => p.id).filter(Boolean)
+        if (!ids.length) continue
+
+        const todayDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+        const cacheKey  = `pitcher_enrich_${season}_${todayDate}_${ids.slice(0, 3).join('-')}`
+        let result = getCached(cacheKey)
+
+        if (!result) {
+          try {
+            const res = await fetch(`/api/mlb/players/pitcher-batch?ids=${ids.join(',')}&season=${season}`)
+            if (!res.ok) continue
+            result = await res.json()
+            setCached(cacheKey, result, PITCHER_BATCH_TTL)
+          } catch { continue }
+        }
+
+        for (const item of result?.pitchers || []) {
+          const idx = enriched.findIndex((p) => p.id === item.personId)
+          if (idx === -1) continue
+          enriched[idx] = {
+            ...enriched[idx],
+            seasonERA:  item.seasonERA,
+            seasonWHIP: item.seasonWHIP,
+            seasonIP:   item.seasonIP,
+            seasonW:    item.seasonW,
+            seasonL:    item.seasonL,
+            last3:      item.last3 || [],
+            last3Avg:   item.last3Avg,
+          }
+        }
+
+        if (!cancelled) {
+          // Attach FanGraphs data + compute pitcher matchup score
+          const teamWrcMap = await getTeamWrcAverages().catch(() => ({}))
+          const withFG = enriched.map((p) => {
+            const fgP     = fgPitchers[p.name] || null
+            const oppTeam = teamWrcMap[p.opposingTeamAbbr] || null
+            const kPct  = fgP?.k_pct  != null ? parseFloat(fgP.k_pct)  : null
+            const bbPct = fgP?.bb_pct != null ? parseFloat(fgP.bb_pct) : null
+
+            const { score } = computePitcherMatchupScore({
+              pitcherXFIP:     fgP?.xfip  != null ? parseFloat(fgP.xfip)  : null,
+              pitcherSIERA:    fgP?.siera != null ? parseFloat(fgP.siera) : null,
+              opposingWRC:     oppTeam?.wrc_plus  != null ? parseFloat(oppTeam.wrc_plus)  : null,
+              pitcherKPct:     kPct,
+              pitcherBBPct:    bbPct,
+              last3StartsAvg:  p.last3Avg,
+              opposingHardPct: oppTeam?.hard_pct  != null ? parseFloat(oppTeam.hard_pct)  : null,
+            })
+            return { ...p, fgData: fgP, matchupScore: score }
+          })
+
+          // Percentile-based grades across all pitchers with games today
+          const allScores = withFG.map((p) => p.matchupScore ?? 50)
+          setPitchers(withFG.map((p) => ({
+            ...p,
+            matchupGrade: p.gamePk ? scoreToGrade(p.matchupScore ?? 50, allScores) : '--',
+          })))
+        }
+        await new Promise((r) => setTimeout(r, 25))
+      }
+    }
+
+    enrichPitchers()
+    return () => { cancelled = true }
+  }, [gamesData, fgPitchers]) // re-enrich when FG data arrives
 
   const scheduleGames = gamesData?.games || []
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] flex flex-col transition-colors">
-      <Header onOpenPicks={() => setPicksOpen(true)} activeTab={activeTab} />
+      <Header onOpenPicks={() => setPicksOpen(true)} fgLastUpdated={fgLastUpdated} />
 
-      {/* ScoreCards strip — hidden on Daily Matchups tab (that tab has its own vertical list) */}
       {activeTab !== 'dailymatchups' && (
         <ScoreCards
           games={scheduleGames}
@@ -305,7 +470,6 @@ export default function App() {
         />
       )}
 
-      {/* Tab nav — desktop top bar + mobile bottom bar */}
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
 
       <main className="flex-1 max-w-screen-2xl mx-auto w-full pb-20 lg:pb-4">
@@ -353,6 +517,7 @@ export default function App() {
             {activeTab === 'players' && (
               <PlayerListTab
                 players={players}
+                pitchers={pitchers}
                 games={scheduleGames}
                 loading={loading}
                 error={error}
@@ -361,17 +526,15 @@ export default function App() {
                 onToggleStar={handleToggleStar}
                 selectedGamePk={selectedGamePk}
                 updatedIds={updatedIds}
+                fgBatters={fgBatters}
+                fgPitchers={fgPitchers}
               />
             )}
           </>
         )}
       </main>
 
-      <MyPicks
-        isOpen={picksOpen}
-        onClose={() => setPicksOpen(false)}
-        allPlayers={players}
-      />
+      <MyPicks isOpen={picksOpen} onClose={() => setPicksOpen(false)} allPlayers={players} />
     </div>
   )
 }

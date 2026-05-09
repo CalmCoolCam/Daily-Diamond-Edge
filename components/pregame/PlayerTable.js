@@ -9,7 +9,7 @@ import PlayerHeadshot from '../ui/PlayerHeadshot'
 import { SkeletonTableRow } from '../ui/Skeleton'
 import ErrorState from '../ui/ErrorState'
 import {
-  gradeColor, gradeColorHex, computeCompositeMatchupScore, scoreToGrade, currentSeason,
+  gradeColor, gradeColorHex, computeBatterMatchupScore, scoreToGrade, currentSeason,
 } from '@/lib/mlbApi'
 import { usePicks } from '@/hooks/usePicks'
 import { debounce } from '@/lib/utils'
@@ -62,29 +62,34 @@ function ComponentBar({ label, weight, score, missing = false }) {
   )
 }
 
-function buildDropdownSummary(grade, vsPlayer, lastStartsAvg, last7Total) {
+function buildBatterSummary(grade, vsPlayer, last7Total, fgBatterData, fgPitcherData) {
   const desc = { A: 'Strong matchup', B: 'Favorable matchup', C: 'Average matchup', D: 'Tough matchup', F: 'Very tough matchup' }
   const parts = [desc[grade] || 'Matchup data']
   if (vsPlayer?.sufficient && vsPlayer.ab > 0) {
     parts.push(`${vsPlayer.h} for ${vsPlayer.ab} vs this starter${vsPlayer.hr > 0 ? `, ${vsPlayer.hr} HR` : ''}`)
   } else if (last7Total > 0) {
-    parts.push(`batter has ${last7Total} H+R+RBI over last 7 days`)
+    parts.push(`${last7Total} H+R+RBI over last 7 days`)
   }
-  if (lastStartsAvg?.era != null) {
-    if (lastStartsAvg.era > 4.5) parts.push(`pitcher has struggled recently (${parseFloat(lastStartsAvg.era).toFixed(2)} ERA last 3)`)
-    else if (lastStartsAvg.era < 3.0) parts.push(`pitcher is sharp recently (${parseFloat(lastStartsAvg.era).toFixed(2)} ERA last 3)`)
+  if (fgBatterData?.wrc_plus != null) {
+    const wrc = parseFloat(fgBatterData.wrc_plus)
+    if (wrc >= 130) parts.push(`elite bat (${Math.round(wrc)} wRC+)`)
+    else if (wrc < 85) parts.push(`below-average bat (${Math.round(wrc)} wRC+)`)
+  }
+  if (fgPitcherData?.xfip != null) {
+    const xfip = parseFloat(fgPitcherData.xfip)
+    if (xfip < 3.5) parts.push(`elite starter (${xfip.toFixed(2)} xFIP)`)
+    else if (xfip > 4.5) parts.push(`hittable starter (${xfip.toFixed(2)} xFIP)`)
   }
   return parts.length > 1 ? `${parts[0]} — ${parts.slice(1).join(', ')}.` : `${parts[0]}.`
 }
 
 // ── Player expanded dropdown ──────────────────────────────────────────────────
 
-function PlayerDropdown({ player, games }) {
+function PlayerDropdown({ player, games, fgBatters, fgPitchers }) {
   const [detail, setDetail]     = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const season = currentSeason()
 
-  // Find this player's opposing pitcher from the games list
   const game = games?.find((g) => g.gamePk === player.gamePk)
   const pitcher = player.isHome
     ? game?.teams?.away?.probablePitcher
@@ -93,6 +98,10 @@ function PlayerDropdown({ player, games }) {
     ? extractPitcherStatsFromGame(game?.awayPitcherStats)
     : extractPitcherStatsFromGame(game?.homePitcherStats)
   const pitcherId = pitcher?.id
+
+  // FanGraphs lookups (session-cached via module-level cache in fangraphsData.js)
+  const fgBatterData  = fgBatters?.[player.name]  || null
+  const fgPitcherData = pitcher?.fullName ? (fgPitchers?.[pitcher.fullName] || null) : null
 
   // Auto-fetch matchup detail when dropdown opens
   useEffect(() => {
@@ -106,25 +115,22 @@ function PlayerDropdown({ player, games }) {
     return () => { cancelled = true }
   }, [pitcherId, player.id, season, detail])
 
-  // Compute composite grade + component breakdown
-  const lastStartsAvg = detail?.lastStarts?.length > 0 ? {
-    era:   detail.lastStarts.reduce((s, x) => s + (parseFloat(x.era)  || 4.5), 0) / detail.lastStarts.length,
-    whip:  detail.lastStarts.reduce((s, x) => s + (parseFloat(x.whip) || 1.3), 0) / detail.lastStarts.length,
-    kPer9: null,
-  } : null
-
   const vsPlayer = detail?.vsPlayer || null
 
-  const { score, components } = computeCompositeMatchupScore({
-    starterSeason: pitcherStats.era != null ? pitcherStats : null,
-    batterForm:    player.last7Total || 0,
-    bullpenERA:    4.5,
-    lastStartsAvg,
+  // New 6-component batter grade formula
+  const { score, components } = computeBatterMatchupScore({
+    batterForm:   player.last7Total || 0,
     vsPlayer,
+    batterWRC:    fgBatterData?.wrc_plus  != null ? parseFloat(fgBatterData.wrc_plus)  : null,
+    starterXFIP:  fgPitcherData?.xfip     != null ? parseFloat(fgPitcherData.xfip)     : null,
+    bullpenERA:   4.5,
+    starterKPct:  fgPitcherData?.k_pct    != null ? parseFloat(fgPitcherData.k_pct)    : null,
   })
 
   const grade   = scoreToGrade(score, [])
-  const summary = buildDropdownSummary(grade, vsPlayer, lastStartsAvg, player.last7Total || 0)
+  const summary = buildBatterSummary(grade, vsPlayer, player.last7Total || 0, fgBatterData, fgPitcherData)
+
+  const h2hSufficient = vsPlayer?.sufficient === true && (vsPlayer?.ab || 0) >= 5
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-1">
@@ -158,11 +164,16 @@ function PlayerDropdown({ player, games }) {
                 {player.seasonH}H / {player.seasonR}R / {player.seasonRBI}RBI
               </span>
             </span>
+            {fgBatterData?.wrc_plus != null && (
+              <span className="text-slate-400">
+                wRC+: <span className="font-bold text-slate-700">{Math.round(parseFloat(fgBatterData.wrc_plus))}</span>
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Right: grade letter + summary + 5-component breakdown */}
+      {/* Right: grade letter + summary + 6-component breakdown */}
       <div>
         <div className="flex items-center gap-3 mb-2.5">
           <span
@@ -176,31 +187,42 @@ function PlayerDropdown({ player, games }) {
 
         <div className="space-y-1.5">
           <ComponentBar
-            label={`vs ${pitcher?.fullName?.split(' ').pop() || 'Starter'} (lifetime)`}
-            weight={30}
-            score={components.h2h?.score}
-            missing={!components.h2h?.sufficient && components.h2h?.score == null}
-          />
-          <ComponentBar
-            label={`Starter ERA ${pitcherStats.era?.toFixed(2) ?? '--'} / K9 ${pitcherStats.kPer9?.toFixed(1) ?? '--'} / WHIP ${pitcherStats.whip?.toFixed(2) ?? '--'}`}
-            weight={25}
-            score={components.starter?.score}
-          />
-          <ComponentBar
-            label={`Batter 7-day form (${player.last7Total ?? 0} H+R+RBI)`}
-            weight={25}
+            label={`7-day form (${player.last7Total ?? 0} H+R+RBI)`}
+            weight={components.batterForm?.weight ?? 25}
             score={components.batterForm?.score}
           />
-          <ComponentBar label="Bullpen ERA" weight={15} score={components.bullpen?.score} />
           <ComponentBar
-            label="Pitcher last 3 starts"
-            weight={5}
-            score={components.lastStarts?.score}
-            missing={components.lastStarts?.score == null}
+            label={`vs ${pitcher?.fullName?.split(' ').pop() || 'Starter'} (lifetime)`}
+            weight={components.h2h?.weight ?? 20}
+            score={components.h2h?.score}
+            missing={!h2hSufficient && components.h2h?.score == null}
+          />
+          <ComponentBar
+            label={`Batter wRC+${fgBatterData?.wrc_plus != null ? ` (${Math.round(parseFloat(fgBatterData.wrc_plus))})` : ''}`}
+            weight={components.batterWRC?.weight ?? 15}
+            score={components.batterWRC?.score}
+            missing={components.batterWRC?.score == null}
+          />
+          <ComponentBar
+            label={`Starter xFIP${fgPitcherData?.xfip != null ? ` (${parseFloat(fgPitcherData.xfip).toFixed(2)})` : ''}`}
+            weight={components.starterXFIP?.weight ?? 15}
+            score={components.starterXFIP?.score}
+            missing={components.starterXFIP?.score == null}
+          />
+          <ComponentBar
+            label="Bullpen ERA"
+            weight={components.bullpenERA?.weight ?? 15}
+            score={components.bullpenERA?.score}
+          />
+          <ComponentBar
+            label={`Starter K%${fgPitcherData?.k_pct != null ? ` (${parseFloat(fgPitcherData.k_pct).toFixed(1)}%)` : ''}`}
+            weight={components.starterKPct?.weight ?? 10}
+            score={components.starterKPct?.score}
+            missing={components.starterKPct?.score == null}
           />
         </div>
 
-        {/* h2h detail */}
+        {/* H2H career detail */}
         {vsPlayer && (
           <div className="mt-2 text-[10px] text-slate-500 bg-slate-50 rounded-lg px-2 py-1.5">
             <span className="font-semibold">Career vs starter: </span>
@@ -284,7 +306,7 @@ function DevStatDebug({ player }) {
   )
 }
 
-function PlayerRow({ player, rank, starred, onToggleStar, updatedIds, games }) {
+function PlayerRow({ player, rank, starred, onToggleStar, updatedIds, games, fgBatters, fgPitchers }) {
   const [expanded, setExpanded] = useState(false)
   const [showDebug, setShowDebug] = useState(false)
   const { getCount } = usePicks()
@@ -410,7 +432,7 @@ function PlayerRow({ player, rank, starred, onToggleStar, updatedIds, games }) {
       {expanded && (
         <tr className="border-b border-slate-100 bg-slate-50/80 filter-drawer">
           <td colSpan={COLS.length} className="px-4 py-4">
-            <PlayerDropdown player={player} games={games} />
+            <PlayerDropdown player={player} games={games} fgBatters={fgBatters} fgPitchers={fgPitchers} />
           </td>
         </tr>
       )}
@@ -418,7 +440,7 @@ function PlayerRow({ player, rank, starred, onToggleStar, updatedIds, games }) {
   )
 }
 
-export default function PlayerTable({ players, loading, error, onRetry, stars, onToggleStar, selectedGamePk, updatedIds, games }) {
+export default function PlayerTable({ players, loading, error, onRetry, stars, onToggleStar, selectedGamePk, updatedIds, games, fgBatters, fgPitchers }) {
   const [sort, setSort] = useState(SORT_DEFAULTS)
   const [search, setSearch] = useState('')
   const [filterTeam, setFilterTeam] = useState('')
@@ -599,6 +621,8 @@ export default function PlayerTable({ players, loading, error, onRetry, stars, o
                 onToggleStar={onToggleStar}
                 updatedIds={updatedIds}
                 games={games}
+                fgBatters={fgBatters}
+                fgPitchers={fgPitchers}
               />
             ))}
           </tbody>
