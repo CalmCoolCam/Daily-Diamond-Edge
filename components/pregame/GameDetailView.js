@@ -55,9 +55,26 @@ function StatCell({ label, value, tint }) {
   )
 }
 
+// ── Probable Starter badge ─────────────────────────────────────────────────────
+
+function ProbableBadge() {
+  return (
+    <div
+      className="inline-block mt-1 px-1.5 py-px rounded-full text-[9px] font-bold tracking-[0.08em] uppercase leading-none"
+      style={{
+        background: 'rgba(245,158,11,0.15)',
+        border: '1px solid #f59e0b',
+        color: '#f59e0b',
+      }}
+    >
+      Probable Starter
+    </div>
+  )
+}
+
 // ── Section 1: Pitcher column ─────────────────────────────────────────────────
 
-function PitcherColumn({ pitcher, pitcherStats, teamId, teamAbbr, label }) {
+function PitcherColumn({ pitcher, pitcherStats, teamId, teamAbbr, label, isProbable = false }) {
   const era     = pitcherStats?.era
   const kPer9   = pitcherStats?.kPer9
   const whip    = pitcherStats?.whip
@@ -69,9 +86,10 @@ function PitcherColumn({ pitcher, pitcherStats, teamId, teamAbbr, label }) {
 
       {pitcher ? (
         <>
-          <PlayerHeadshot personId={pitcher.id} name={pitcher.fullName} teamAbbr={teamAbbr} height={72} />
+          <PlayerHeadshot personId={pitcher.id} name={pitcher.fullName} teamAbbr={teamAbbr} height={72} isProbable={isProbable} />
           <div>
             <div className="font-bold text-sm text-slate-900 leading-tight px-1">{pitcher.fullName}</div>
+            {isProbable && <ProbableBadge />}
             <div className="flex items-center justify-center gap-1 mt-1">
               <TeamLogo teamId={teamId} abbr={teamAbbr} size="sm" />
               <TeamBadge abbr={teamAbbr} size="xs" />
@@ -110,6 +128,10 @@ function PitcherMatchup({ game }) {
   const awayPitcherStats = extractPitcherStats(game.awayPitcherStats)
   const gameTime = formatCSTTime(game.gameDate)
 
+  // Both pitchers listed as probablePitcher are always "probable" in this context
+  const awayProbable = Boolean(away?.probablePitcher)
+  const homeProbable = Boolean(home?.probablePitcher)
+
   return (
     <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] card-shadow p-4 mb-4">
       <div className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest text-center mb-4">
@@ -122,6 +144,7 @@ function PitcherMatchup({ game }) {
           teamId={away?.team?.id}
           teamAbbr={away?.team?.abbreviation}
           label="Away Starter"
+          isProbable={awayProbable}
         />
         <div className="flex sm:flex-col items-center justify-center gap-1.5 px-3 sm:pt-10 flex-shrink-0">
           <span className="text-3xl font-black text-slate-200 leading-none" style={{ fontFamily: "'Bebas Neue', sans-serif" }}>vs</span>
@@ -133,6 +156,7 @@ function PitcherMatchup({ game }) {
           teamId={home?.team?.id}
           teamAbbr={home?.team?.abbreviation}
           label="Home Starter"
+          isProbable={homeProbable}
         />
       </div>
     </div>

@@ -15,13 +15,18 @@ import { usePicks } from '@/hooks/usePicks'
 import { debounce } from '@/lib/utils'
 import { getCached, setCached } from '@/lib/storage'
 
-// ── Matchup detail cache (module-level, day-scoped) ──────────────────────────
+// ── Cache helpers (module-level, day-scoped) ──────────────────────────────────
 
 const matchupMemCache = {}
+const eraPlusMemCache = {}
+const splitsMemCache  = {}
+
+function todayKey() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+}
 
 function matchupCacheKey(batterId, pitcherId) {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
-  return `matchup_${batterId}_${pitcherId}_${today}`
+  return `matchup_${batterId}_${pitcherId}_${todayKey()}`
 }
 
 async function fetchMatchupDetail(batterId, pitcherId, season) {
@@ -32,9 +37,62 @@ async function fetchMatchupDetail(batterId, pitcherId, season) {
   const res = await fetch(`/api/mlb/matchup?batterId=${batterId}&pitcherId=${pitcherId}&season=${season}`)
   if (!res.ok) throw new Error(`Matchup fetch failed: ${res.status}`)
   const data = await res.json()
-  setCached(key, data, 20 * 60 * 60 * 1000) // full day
+  setCached(key, data, 20 * 60 * 60 * 1000)
   matchupMemCache[key] = data
   return data
+}
+
+// ERA+ per pitcher — cached full day in localStorage
+async function fetchERAPlus(pitcherId, era) {
+  const key = `dde_eraplus_${pitcherId}_${todayKey()}`
+  if (eraPlusMemCache[key] !== undefined) return eraPlusMemCache[key]
+  const lsCached = getCached(key)
+  if (lsCached !== null && lsCached !== undefined) {
+    eraPlusMemCache[key] = lsCached
+    return lsCached
+  }
+  // Compute from the ERA already passed (from game data), or fetch from API
+  let eraVal = era
+  if (eraVal == null) {
+    try {
+      const res = await fetch(`/api/mlb/player/${pitcherId}/stats?group=pitching`)
+      if (res.ok) {
+        const data = await res.json()
+        const stat = data?.stats?.[0]?.splits?.[0]?.stat || {}
+        eraVal = stat.era != null ? parseFloat(stat.era) : null
+      }
+    } catch { /* fall through */ }
+  }
+  const LEAGUE_AVG_ERA = 4.00
+  const eraPlusVal = eraVal && eraVal > 0 ? Math.round(100 * LEAGUE_AVG_ERA / eraVal) : null
+  setCached(key, eraPlusVal, 24 * 60 * 60 * 1000)
+  eraPlusMemCache[key] = eraPlusVal
+  return eraPlusVal
+}
+
+// Batter handedness splits — cached full day in localStorage
+async function fetchHandednessSplits(batterId, pitcherThrows, season) {
+  const sitCode = pitcherThrows === 'L' ? 'vl' : 'vr'
+  const key = `dde_splits_${batterId}_${todayKey()}`
+  if (splitsMemCache[key] !== undefined) return splitsMemCache[key]
+  const lsCached = getCached(key)
+  if (lsCached !== null && lsCached !== undefined) {
+    splitsMemCache[key] = lsCached
+    return lsCached
+  }
+  try {
+    const res = await fetch(`/api/mlb/player/${batterId}/stats?group=hitting&sitCodes=${sitCode}&season=${season}`)
+    if (!res.ok) throw new Error('splits fetch failed')
+    const data = await res.json()
+    const stat = data?.stats?.[0]?.splits?.[0]?.stat || {}
+    const ops  = stat.ops != null ? parseFloat(stat.ops) : null
+    setCached(key, ops, 24 * 60 * 60 * 1000)
+    splitsMemCache[key] = ops
+    return ops
+  } catch {
+    splitsMemCache[key] = null
+    return null
+  }
 }
 
 function extractPitcherStatsFromGame(statsData) {
@@ -46,48 +104,66 @@ function extractPitcherStatsFromGame(statsData) {
   }
 }
 
-function ComponentBar({ label, weight, score, missing = false }) {
-  const pct   = missing ? 0 : Math.round(score ?? 0)
-  const color = pct >= 60 ? '#16a34a' : pct >= 40 ? '#f59e0b' : '#dc2626'
+function ComponentBar({ label, weight, score, missing = false, comingSoon = false }) {
+  const pct   = (missing || comingSoon) ? 50 : Math.round(score ?? 0)
+  const color = comingSoon ? '#94a3b8' : pct >= 75 ? '#16a34a' : pct >= 40 ? '#f59e0b' : '#dc2626'
   return (
     <div className="space-y-0.5">
       <div className="flex items-center justify-between text-[10px]">
         <span className="text-slate-500 truncate pr-1">{label}</span>
-        <span className="text-slate-400 font-mono flex-shrink-0">{weight}% · {missing ? 'N/A' : `${pct}/100`}</span>
+        <span className="text-slate-400 font-mono flex-shrink-0">
+          {weight}% · {comingSoon ? 'Coming Soon' : missing ? 'N/A' : `${pct}/100`}
+        </span>
       </div>
       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+        <div className="h-full rounded-full transition-all" style={{ width: comingSoon ? '50%' : `${pct}%`, backgroundColor: color }} />
       </div>
     </div>
   )
 }
 
-function buildBatterSummary(grade, vsPlayer, last7Total, fgBatterData, fgPitcherData) {
+function buildBatterSummary(grade, components, vsPlayer, last7Total, fgBatterData, fgPitcherData) {
   const desc = { A: 'Strong matchup', B: 'Favorable matchup', C: 'Average matchup', D: 'Tough matchup', F: 'Very tough matchup' }
+  // Find top 2 scoring components and bottom 1
+  const scored = Object.entries(components)
+    .filter(([k, v]) => v?.score != null && k !== 'pitchMix')
+    .map(([k, v]) => ({ key: k, score: v.score }))
+    .sort((a, b) => b.score - a.score)
+  const top2   = scored.slice(0, 2)
+  const bottom = scored[scored.length - 1]
+
   const parts = [desc[grade] || 'Matchup data']
-  if (vsPlayer?.sufficient && vsPlayer.ab > 0) {
-    parts.push(`${vsPlayer.h} for ${vsPlayer.ab} vs this starter${vsPlayer.hr > 0 ? `, ${vsPlayer.hr} HR` : ''}`)
-  } else if (last7Total > 0) {
-    parts.push(`${last7Total} H+R+RBI over last 7 days`)
+
+  for (const { key, score } of top2) {
+    if (key === 'starterSIERA' && fgPitcherData?.siera != null)
+      parts.push(`hittable starter (${parseFloat(fgPitcherData.siera).toFixed(2)} SIERA)`)
+    else if (key === 'starterXFIP' && fgPitcherData?.xfip != null)
+      parts.push(`favorable vs starter (${parseFloat(fgPitcherData.xfip).toFixed(2)} xFIP)`)
+    else if (key === 'batterForm' && last7Total > 0)
+      parts.push(`${last7Total} H+R+RBI over last 7 days`)
+    else if (key === 'batterWRC' && fgBatterData?.wrc_plus != null)
+      parts.push(`elite bat (${Math.round(parseFloat(fgBatterData.wrc_plus))} wRC+)`)
+    else if (key === 'h2h' && vsPlayer?.sufficient && vsPlayer.ab >= 5)
+      parts.push(`${vsPlayer.h} for ${vsPlayer.ab} career vs starter`)
   }
-  if (fgBatterData?.wrc_plus != null) {
-    const wrc = parseFloat(fgBatterData.wrc_plus)
-    if (wrc >= 130) parts.push(`elite bat (${Math.round(wrc)} wRC+)`)
-    else if (wrc < 85) parts.push(`below-average bat (${Math.round(wrc)} wRC+)`)
+
+  if (bottom && bottom.score < 30) {
+    if (bottom.key === 'starterSIERA' && fgPitcherData?.siera != null)
+      parts.push(`tough starter (${parseFloat(fgPitcherData.siera).toFixed(2)} SIERA)`)
+    else if (bottom.key === 'starterXFIP' && fgPitcherData?.xfip != null)
+      parts.push(`elite starter (${parseFloat(fgPitcherData.xfip).toFixed(2)} xFIP)`)
   }
-  if (fgPitcherData?.xfip != null) {
-    const xfip = parseFloat(fgPitcherData.xfip)
-    if (xfip < 3.5) parts.push(`elite starter (${xfip.toFixed(2)} xFIP)`)
-    else if (xfip > 4.5) parts.push(`hittable starter (${xfip.toFixed(2)} xFIP)`)
-  }
+
   return parts.length > 1 ? `${parts[0]} — ${parts.slice(1).join(', ')}.` : `${parts[0]}.`
 }
 
 // ── Player expanded dropdown ──────────────────────────────────────────────────
 
 function PlayerDropdown({ player, games, fgBatters, fgPitchers }) {
-  const [detail, setDetail]     = useState(null)
+  const [detail, setDetail]           = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [eraPlusVal, setEraPlusVal]   = useState(null)
+  const [splitOPS, setSplitOPS]       = useState(null)
   const season = currentSeason()
 
   const game = games?.find((g) => g.gamePk === player.gamePk)
@@ -97,52 +173,68 @@ function PlayerDropdown({ player, games, fgBatters, fgPitchers }) {
   const pitcherStats = player.isHome
     ? extractPitcherStatsFromGame(game?.awayPitcherStats)
     : extractPitcherStatsFromGame(game?.homePitcherStats)
-  const pitcherId = pitcher?.id
+  const pitcherId   = pitcher?.id
+  const pitcherEra  = pitcherStats?.era  // already fetched inline from game data
 
-  // FanGraphs lookups (session-cached via module-level cache in fangraphsData.js)
   const fgBatterData  = fgBatters?.[player.name]  || null
   const fgPitcherData = pitcher?.fullName ? (fgPitchers?.[pitcher.fullName] || null) : null
 
-  // Auto-fetch matchup detail when dropdown opens
+  const bullpenERA = player.isHome
+    ? parseFloat(game?.teams?.away?.team?.bullpenERA) || 4.5
+    : parseFloat(game?.teams?.home?.team?.bullpenERA) || 4.5
+
+  // Lazy: fetch H2H, ERA+, and handedness splits when dropdown opens
   useEffect(() => {
-    if (!pitcherId || !player.id || detail) return
+    if (!pitcherId || !player.id) return
     let cancelled = false
-    setDetailLoading(true)
-    fetchMatchupDetail(player.id, pitcherId, season)
-      .then((d) => { if (!cancelled) setDetail(d) })
+
+    // H2H detail
+    if (!detail) {
+      setDetailLoading(true)
+      fetchMatchupDetail(player.id, pitcherId, season)
+        .then((d) => { if (!cancelled) setDetail(d) })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setDetailLoading(false) })
+    }
+
+    // ERA+ (use pitcher ERA from game data to avoid extra API call)
+    fetchERAPlus(pitcherId, pitcherEra)
+      .then((v) => { if (!cancelled) setEraPlusVal(v) })
       .catch(() => {})
-      .finally(() => { if (!cancelled) setDetailLoading(false) })
+
+    // Handedness splits
+    const pitcherThrows = pitcher?.pitchHand?.code || 'R'
+    fetchHandednessSplits(player.id, pitcherThrows, season)
+      .then((v) => { if (!cancelled) setSplitOPS(v) })
+      .catch(() => {})
+
     return () => { cancelled = true }
-  }, [pitcherId, player.id, season, detail])
+  }, [pitcherId, player.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const vsPlayer = detail?.vsPlayer || null
 
-  // New 6-component batter grade formula
+  // 10-component batter grade
   const { score, components } = computeBatterMatchupScore({
-    batterForm:   player.last7Total || 0,
+    starterSIERA:   fgPitcherData?.siera != null ? parseFloat(fgPitcherData.siera) : null,
+    starterXFIP:    fgPitcherData?.xfip  != null ? parseFloat(fgPitcherData.xfip)  : null,
+    starterERAplus: eraPlusVal,
     vsPlayer,
-    batterWRC:    fgBatterData?.wrc_plus  != null ? parseFloat(fgBatterData.wrc_plus)  : null,
-    starterXFIP:  fgPitcherData?.xfip     != null ? parseFloat(fgPitcherData.xfip)     : null,
-    bullpenERA:   4.5,
-    starterKPct:  fgPitcherData?.k_pct    != null ? parseFloat(fgPitcherData.k_pct)    : null,
+    batterSplitOPS: splitOPS,
+    batterForm:     player.last7Total || 0,
+    batterWRC:      fgBatterData?.wrc_plus != null ? parseFloat(fgBatterData.wrc_plus) : null,
+    batterBABIP:    fgBatterData?.babip    != null ? parseFloat(fgBatterData.babip)    : null,
+    bullpenERA,
   })
 
   const grade   = scoreToGrade(score, [])
-  const summary = buildBatterSummary(grade, vsPlayer, player.last7Total || 0, fgBatterData, fgPitcherData)
-
+  const summary = buildBatterSummary(grade, components, vsPlayer, player.last7Total || 0, fgBatterData, fgPitcherData)
   const h2hSufficient = vsPlayer?.sufficient === true && (vsPlayer?.ab || 0) >= 5
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-1">
       {/* Left: headshot + identity */}
       <div className="flex items-start gap-3">
-        <PlayerHeadshot
-          personId={player.id}
-          name={player.name}
-          teamAbbr={player.teamAbbr}
-          height={80}
-          className="flex-shrink-0"
-        />
+        <PlayerHeadshot personId={player.id} name={player.name} teamAbbr={player.teamAbbr} height={80} className="flex-shrink-0" />
         <div className="min-w-0">
           <div className="font-bold text-sm text-slate-900 leading-tight">{player.name}</div>
           <div className="flex items-center gap-1 mt-1 flex-wrap">
@@ -151,35 +243,23 @@ function PlayerDropdown({ player, games, fgBatters, fgPitchers }) {
             <span className="text-xs text-slate-400">· {player.position}</span>
           </div>
           {pitcher && (
-            <div className="text-[10px] text-slate-400 mt-1">
-              vs <span className="font-medium">{pitcher.fullName}</span>
-            </div>
+            <div className="text-[10px] text-slate-400 mt-1">vs <span className="font-medium">{pitcher.fullName}</span></div>
           )}
           <div className="flex flex-wrap gap-3 mt-2 text-xs">
-            <span className="text-slate-400">
-              7-Day: <span className="font-bold text-amber-500">{player.last7Total ?? 0}</span>
-            </span>
-            <span className="text-slate-400">
-              Season: <span className="font-medium text-slate-600">
-                {player.seasonH}H / {player.seasonR}R / {player.seasonRBI}RBI
-              </span>
-            </span>
+            <span className="text-slate-400">7-Day: <span className="font-bold text-amber-500">{player.last7Total ?? 0}</span></span>
+            <span className="text-slate-400">Season: <span className="font-medium text-slate-600">{player.seasonH}H / {player.seasonR}R / {player.seasonRBI}RBI</span></span>
             {fgBatterData?.wrc_plus != null && (
-              <span className="text-slate-400">
-                wRC+: <span className="font-bold text-slate-700">{Math.round(parseFloat(fgBatterData.wrc_plus))}</span>
-              </span>
+              <span className="text-slate-400">wRC+: <span className="font-bold text-slate-700">{Math.round(parseFloat(fgBatterData.wrc_plus))}</span></span>
             )}
           </div>
         </div>
       </div>
 
-      {/* Right: grade letter + summary + 6-component breakdown */}
+      {/* Right: grade letter + 10-component breakdown */}
       <div>
         <div className="flex items-center gap-3 mb-2.5">
-          <span
-            className="text-4xl font-black leading-none flex-shrink-0"
-            style={{ fontFamily: "'Bebas Neue', sans-serif", color: gradeColorHex(grade) }}
-          >
+          <span className="text-4xl font-black leading-none flex-shrink-0"
+            style={{ fontFamily: "'Bebas Neue', sans-serif", color: gradeColorHex(grade) }}>
             {grade}
           </span>
           <p className="text-[11px] text-slate-500 italic leading-snug">{summary}</p>
@@ -187,38 +267,62 @@ function PlayerDropdown({ player, games, fgBatters, fgPitchers }) {
 
         <div className="space-y-1.5">
           <ComponentBar
-            label={`7-day form (${player.last7Total ?? 0} H+R+RBI)`}
-            weight={components.batterForm?.weight ?? 25}
-            score={components.batterForm?.score}
-          />
-          <ComponentBar
-            label={`vs ${pitcher?.fullName?.split(' ').pop() || 'Starter'} (lifetime)`}
-            weight={components.h2h?.weight ?? 20}
-            score={components.h2h?.score}
-            missing={!h2hSufficient && components.h2h?.score == null}
-          />
-          <ComponentBar
-            label={`Batter wRC+${fgBatterData?.wrc_plus != null ? ` (${Math.round(parseFloat(fgBatterData.wrc_plus))})` : ''}`}
-            weight={components.batterWRC?.weight ?? 15}
-            score={components.batterWRC?.score}
-            missing={components.batterWRC?.score == null}
+            label={`Starter SIERA${fgPitcherData?.siera != null ? ` (${parseFloat(fgPitcherData.siera).toFixed(2)})` : ''}`}
+            weight={components.starterSIERA?.weight ?? 20}
+            score={components.starterSIERA?.score}
+            missing={components.starterSIERA?.score == null}
           />
           <ComponentBar
             label={`Starter xFIP${fgPitcherData?.xfip != null ? ` (${parseFloat(fgPitcherData.xfip).toFixed(2)})` : ''}`}
-            weight={components.starterXFIP?.weight ?? 15}
+            weight={components.starterXFIP?.weight ?? 20}
             score={components.starterXFIP?.score}
             missing={components.starterXFIP?.score == null}
           />
           <ComponentBar
+            label={`Starter ERA+${eraPlusVal != null ? ` (${eraPlusVal})` : ''}`}
+            weight={components.starterERAplus?.weight ?? 10}
+            score={components.starterERAplus?.score}
+            missing={components.starterERAplus?.score == null}
+          />
+          <ComponentBar
+            label={`vs ${pitcher?.fullName?.split(' ').pop() || 'Starter'} (career AVG)`}
+            weight={components.h2h?.weight ?? 10}
+            score={components.h2h?.score}
+            missing={!h2hSufficient && components.h2h?.score == null}
+          />
+          <ComponentBar
+            label={`vs ${pitcher?.pitchHand?.code === 'L' ? 'LHP' : 'RHP'} splits${splitOPS != null ? ` (${splitOPS.toFixed(3)} OPS)` : ''}`}
+            weight={components.batterSplitOPS?.weight ?? 10}
+            score={components.batterSplitOPS?.score}
+            missing={components.batterSplitOPS?.score == null}
+          />
+          <ComponentBar
+            label={`7-day form (${player.last7Total ?? 0} H+R+RBI)`}
+            weight={components.batterForm?.weight ?? 10}
+            score={components.batterForm?.score}
+          />
+          <ComponentBar
+            label={`Batter wRC+${fgBatterData?.wrc_plus != null ? ` (${Math.round(parseFloat(fgBatterData.wrc_plus))})` : ''}`}
+            weight={components.batterWRC?.weight ?? 5}
+            score={components.batterWRC?.score}
+            missing={components.batterWRC?.score == null}
+          />
+          <ComponentBar
+            label={`Batter BABIP${fgBatterData?.babip != null ? ` (${parseFloat(fgBatterData.babip).toFixed(3)})` : ''}`}
+            weight={components.batterBABIP?.weight ?? 5}
+            score={components.batterBABIP?.score}
+            missing={components.batterBABIP?.score == null}
+          />
+          <ComponentBar
             label="Bullpen ERA"
-            weight={components.bullpenERA?.weight ?? 15}
+            weight={components.bullpenERA?.weight ?? 5}
             score={components.bullpenERA?.score}
           />
           <ComponentBar
-            label={`Starter K%${fgPitcherData?.k_pct != null ? ` (${parseFloat(fgPitcherData.k_pct).toFixed(1)}%)` : ''}`}
-            weight={components.starterKPct?.weight ?? 10}
-            score={components.starterKPct?.score}
-            missing={components.starterKPct?.score == null}
+            label="Pitch Mix Analysis"
+            weight={components.pitchMix?.weight ?? 5}
+            score={components.pitchMix?.score}
+            comingSoon
           />
         </div>
 

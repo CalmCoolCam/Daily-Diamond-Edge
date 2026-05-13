@@ -26,13 +26,14 @@ function getInitials(name) {
  * Uses team primary color for the initials circle fallback.
  *
  * Props:
- *   personId:  number  — MLB player ID
- *   name:      string  — Full name (used for initials + alt text)
- *   teamAbbr:  string  — Team abbreviation (used for fallback color)
- *   height:    number  — Pixel size (both width and height); default 80
- *   className: string  — Extra class names applied to the wrapper
+ *   personId:   number  — MLB player ID
+ *   name:       string  — Full name (used for initials + alt text)
+ *   teamAbbr:   string  — Team abbreviation (used for fallback color)
+ *   height:     number  — Pixel size (both width and height); default 80
+ *   className:  string  — Extra class names applied to the wrapper
+ *   isProbable: bool    — Add gold ring indicating today's probable starter
  */
-export default function PlayerHeadshot({ personId, name = '', teamAbbr = '', height = 80, className = '' }) {
+export default function PlayerHeadshot({ personId, name = '', teamAbbr = '', height = 80, className = '', isProbable = false }) {
   const [loaded, setLoaded] = useState(false)
   const [errored, setErrored] = useState(() => Boolean(headshotErrorCache[personId]))
 
@@ -40,11 +41,15 @@ export default function PlayerHeadshot({ personId, name = '', teamAbbr = '', hei
   const initials = getInitials(name)
   const fontSize = Math.round(height * 0.28)
 
+  const probableRingStyle = isProbable
+    ? { boxShadow: '0 0 0 3px #f59e0b, 0 0 8px rgba(245, 158, 11, 0.6)' }
+    : {}
+
   if (!personId || errored) {
     return (
       <div
         className={`flex items-center justify-center rounded-full font-bold flex-shrink-0 select-none ${className}`}
-        style={{ width: height, height, minWidth: height, backgroundColor: bgColor, color: '#ffffff', fontSize }}
+        style={{ width: height, height, minWidth: height, backgroundColor: bgColor, color: '#ffffff', fontSize, ...probableRingStyle }}
         aria-label={name || 'Player'}
       >
         {initials}
@@ -67,7 +72,7 @@ export default function PlayerHeadshot({ personId, name = '', teamAbbr = '', hei
         width={height}
         height={height}
         className="w-full h-full rounded-full object-cover"
-        style={{ opacity: loaded ? 1 : 0, transition: 'opacity 0.2s ease' }}
+        style={{ opacity: loaded ? 1 : 0, transition: 'opacity 0.2s ease', ...probableRingStyle }}
         onLoad={() => setLoaded(true)}
         onError={() => {
           headshotErrorCache[personId] = true

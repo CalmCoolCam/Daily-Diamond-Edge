@@ -11,11 +11,13 @@ export async function GET(request, { params }) {
     }
 
     const { searchParams } = new URL(request.url)
-    const season = searchParams.get('season') || currentSeason()
-    const group = searchParams.get('group') || 'hitting'
+    const season   = searchParams.get('season')   || currentSeason()
+    const group    = searchParams.get('group')    || 'hitting'
+    const sitCodes = searchParams.get('sitCodes') || ''
+    const sitParam = sitCodes ? `&sitCodes=${sitCodes}` : ''
 
     const data = await mlbFetch(
-      `/api/v1/people/${personId}/stats?stats=season&group=${group}&season=${season}`
+      `/api/v1/people/${personId}/stats?stats=season&group=${group}&season=${season}${sitParam}`
     )
     return NextResponse.json(data)
   } catch (err) {

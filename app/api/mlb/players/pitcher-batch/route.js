@@ -49,8 +49,8 @@ export async function GET(request) {
         const ss = seasonStat?.splits?.[0]?.stat || {}
         const allStarts = gameLogStat?.splits || []
 
-        // Last 3 starts: most-recent-first from API — take first 3
-        const last3 = allStarts.slice(0, 3).map((s) => {
+        // Helper to map a game log split to a standard appearance object
+        function mapAppearance(s) {
           const st = s.stat || {}
           return {
             date:     s.date        || '',
@@ -61,7 +61,11 @@ export async function GET(request) {
             era:      st.era         || null,
             whip:     st.whip        || null,
           }
-        })
+        }
+
+        // Last 3 and last 5 appearances (most-recent-first from API)
+        const last3 = allStarts.slice(0, 3).map(mapAppearance)
+        const last5 = allStarts.slice(0, 5).map(mapAppearance)
 
         // Average ERA and WHIP across last 3 starts for grade computation
         const validERA  = last3.filter((s) => s.era  != null).map((s) => parseFloat(s.era))
@@ -80,7 +84,11 @@ export async function GET(request) {
           seasonL:    ss.losses           ?? 0,
           seasonK:    ss.strikeOuts       ?? 0,
           seasonBB:   ss.baseOnBalls      ?? 0,
+          seasonGS:   ss.gamesStarted     ?? 0,
+          seasonSV:   ss.saves            ?? 0,
+          seasonHLD:  ss.holds            ?? 0,
           last3,
+          last5,
           last3Avg,
         }
       })
