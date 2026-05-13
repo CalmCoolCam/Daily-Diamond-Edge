@@ -7,15 +7,27 @@ const POSITIONS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH']
 
 export default function PlayerListTab({
   players, pitchers, games, loading, error, onRetry, stars, onToggleStar,
-  selectedGamePk, updatedIds, fgBatters, fgPitchers,
+  selectedGamePk, updatedIds, fgBatters, fgPitchers, probableStarterIds = new Set(),
 }) {
-  const [view, setView]           = useState('batters')   // 'batters' | 'pitchers'
+  const [view, setView]               = useState('batters')   // 'batters' | 'pitchers'
+  const [pitcherSubTab, setPitcherSubTab] = useState('SP')    // 'SP' | 'RP'
   const [filterPosition, setFilterPosition] = useState('')
+
+  function handleViewChange(tab) {
+    setView(tab)
+    if (tab === 'pitchers') setPitcherSubTab('SP')  // always default to SP
+  }
 
   const filteredBatters = useMemo(() => {
     if (!filterPosition) return players
     return players.filter((p) => p.position === filterPosition)
   }, [players, filterPosition])
+
+  // Filter pitchers by SP/RP type; pitchers without a type yet are hidden until classified
+  const filteredPitchers = useMemo(() => {
+    if (!pitchers?.length) return []
+    return pitchers.filter((p) => p.pitcherType === pitcherSubTab)
+  }, [pitchers, pitcherSubTab])
 
   return (
     <div className="p-4">
@@ -28,7 +40,9 @@ export default function PlayerListTab({
           ⚾ Player List
         </h2>
         <span className="text-xs text-[var(--text-muted)]">
-          {view === 'batters' ? players.length : (pitchers?.length ?? 0)} {view === 'batters' ? 'batters' : 'pitchers'}
+          {view === 'batters'
+            ? `${players.length} batters`
+            : `${filteredPitchers.length} ${pitcherSubTab === 'SP' ? 'starters' : 'relievers'}`}
         </span>
       </div>
 
@@ -37,7 +51,7 @@ export default function PlayerListTab({
         {['batters', 'pitchers'].map((tab) => (
           <button
             key={tab}
-            onClick={() => setView(tab)}
+            onClick={() => handleViewChange(tab)}
             className={`pb-2 text-sm font-semibold uppercase tracking-wider transition-colors ${
               view === tab
                 ? 'text-amber-500 border-b-2 border-amber-500'
@@ -94,16 +108,37 @@ export default function PlayerListTab({
         </>
       )}
 
-      {/* Pitchers view */}
+      {/* Pitchers view — SP/RP sub-tabs + table */}
       {view === 'pitchers' && (
-        <PitcherTable
-          pitchers={pitchers || []}
-          loading={loading}
-          error={error}
-          onRetry={onRetry}
-          stars={stars}
-          onToggleStar={onToggleStar}
-        />
+        <>
+          {/* SP / RP sub-tab toggle */}
+          <div className="flex gap-4 mb-4 border-b border-[var(--border)]">
+            {['SP', 'RP'].map((sub) => (
+              <button
+                key={sub}
+                onClick={() => setPitcherSubTab(sub)}
+                className={`pb-2 text-sm font-semibold uppercase tracking-wider transition-colors ${
+                  pitcherSubTab === sub
+                    ? 'text-amber-500 border-b-2 border-amber-500'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                }`}
+              >
+                {sub === 'SP' ? 'Starting Pitchers' : 'Relief Pitchers'}
+              </button>
+            ))}
+          </div>
+
+          <PitcherTable
+            pitchers={filteredPitchers}
+            pitcherSubTab={pitcherSubTab}
+            probableStarterIds={probableStarterIds}
+            loading={loading}
+            error={error}
+            onRetry={onRetry}
+            stars={stars}
+            onToggleStar={onToggleStar}
+          />
+        </>
       )}
     </div>
   )

@@ -28,12 +28,13 @@ export default function App() {
   const [selectedGamePk, setSelectedGamePk] = useState(null)
 
   // Master data state
-  const [gamesData, setGamesData]     = useState(null)
-  const [players, setPlayers]         = useState([])
-  const [pitchers, setPitchers]       = useState([])
-  const [loading, setLoading]         = useState(true)
-  const [error, setError]             = useState(null)
-  const [updatedIds, setUpdatedIds]   = useState(new Set())
+  const [gamesData, setGamesData]               = useState(null)
+  const [players, setPlayers]                   = useState([])
+  const [pitchers, setPitchers]                 = useState([])
+  const [probableStarterIds, setProbableStarterIds] = useState(new Set())
+  const [loading, setLoading]                   = useState(true)
+  const [error, setError]                       = useState(null)
+  const [updatedIds, setUpdatedIds]             = useState(new Set())
 
   // FanGraphs state
   const [fgBatters, setFgBatters]       = useState({})
@@ -131,7 +132,7 @@ export default function App() {
 
   // ── Build pitcher list from roster data ─────────────────────────────────────
 
-  function buildPitcherList(games) {
+  function buildPitcherList(games, probIds = new Set()) {
     const seen = new Set()
     const list = []
 
@@ -152,22 +153,29 @@ export default function App() {
           if (!pid || seen.has(pid)) continue
           seen.add(pid)
 
+          // Record position code from roster for SP/RP classification
+          const rosterPositionCode = member.position?.code || ''
+
           list.push({
-            id:              pid,
-            name:            member.person?.fullName || '',
-            teamId:          team?.id,
-            teamAbbr:        team?.abbreviation || '',
-            opponentAbbr:    opponent?.abbreviation || '',
-            throws:          member.person?.pitchHand?.code || null,
-            gamePk:          game.gamePk,
-            isHome:          side === 'home',
-            matchupGrade:    '--',
-            matchupScore:    null,
-            fgData:          null,
-            seasonIP:        '--',
-            last3:           [],
-            last3Avg:        null,
-            opposingTeamAbbr: opponent?.abbreviation || '',
+            id:                pid,
+            name:              member.person?.fullName || '',
+            teamId:            team?.id,
+            teamAbbr:          team?.abbreviation || '',
+            opponentAbbr:      opponent?.abbreviation || '',
+            throws:            member.person?.pitchHand?.code || null,
+            gamePk:            game.gamePk,
+            isHome:            side === 'home',
+            matchupGrade:      '--',
+            matchupScore:      null,
+            fgData:            null,
+            seasonIP:          '--',
+            last3:             [],
+            last5:             [],
+            last3Avg:          null,
+            opposingTeamAbbr:  opponent?.abbreviation || '',
+            rosterPositionCode,
+            // Probable starters are always classified as SP
+            pitcherType:       probIds.has(pid) ? 'SP' : null,
           })
         }
       }
@@ -202,8 +210,16 @@ export default function App() {
 
       setGamesData(json)
 
+      // Build probable starter ID set from today's schedule
+      const probIds = new Set()
+      for (const g of json.games || []) {
+        if (g.teams?.home?.probablePitcher?.id) probIds.add(g.teams.home.probablePitcher.id)
+        if (g.teams?.away?.probablePitcher?.id) probIds.add(g.teams.away.probablePitcher.id)
+      }
+      setProbableStarterIds(probIds)
+
       const built = buildPlayerList(json.games || [], liveStats.games || {})
-      const pitcherBuilt = buildPitcherList(json.games || [])
+      const pitcherBuilt = buildPitcherList(json.games || [], probIds)
 
       // Detect stat changes for animation
       const updated = new Set()
@@ -329,24 +345,26 @@ export default function App() {
 
           // Compute batter matchup grade using FanGraphs if available
           const allScores = enriched.map((p) => {
-            const game        = gameMap[p.gamePk]
+            const game       = gameMap[p.gamePk]
             if (!game) return 50
-            const isHome      = p.isHome
-            const pitcherObj  = isHome ? game.teams?.away?.probablePitcher : game.teams?.home?.probablePitcher
-            const pitcherStat = isHome
-              ? game.awayPitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
-              : game.homePitcherStats?.stats?.[0]?.splits?.[0]?.stat || {}
+            const isHome     = p.isHome
+            const pitcherObj = isHome ? game.teams?.away?.probablePitcher : game.teams?.home?.probablePitcher
             const bullpenERA = isHome
               ? parseFloat(game.teams?.away?.team?.bullpenERA) || 4.5
               : parseFloat(game.teams?.home?.team?.bullpenERA) || 4.5
             const fgP = pitcherObj?.fullName ? (fgPitchers[pitcherObj.fullName] || null) : null
             const fgB = fgBatters[p.name] || null
+            // ERA+ and handedness splits are fetched lazily on row expansion — null here
             const { score } = computeBatterMatchupScore({
-              batterForm:  p.last7Total || 0,
-              batterWRC:   fgB?.wrc_plus != null  ? parseFloat(fgB.wrc_plus)  : null,
-              starterXFIP: fgP?.xfip    != null   ? parseFloat(fgP.xfip)    : null,
+              starterSIERA:  fgP?.siera   != null ? parseFloat(fgP.siera)   : null,
+              starterXFIP:   fgP?.xfip    != null ? parseFloat(fgP.xfip)    : null,
+              starterERAplus: null,
+              vsPlayer:      null,
+              batterSplitOPS: null,
+              batterForm:    p.last7Total || 0,
+              batterWRC:     fgB?.wrc_plus != null ? parseFloat(fgB.wrc_plus) : null,
+              batterBABIP:   fgB?.babip    != null ? parseFloat(fgB.babip)    : null,
               bullpenERA,
-              starterKPct: fgP?.k_pct   != null   ? parseFloat(fgP.k_pct)   : null,
             })
             return score
           })
@@ -403,15 +421,31 @@ export default function App() {
         for (const item of result?.pitchers || []) {
           const idx = enriched.findIndex((p) => p.id === item.personId)
           if (idx === -1) continue
+          const p = enriched[idx]
+
+          // SP/RP classification: probable starter > roster code > GS fallback
+          let pitcherType = p.pitcherType  // 'SP' if already marked as probable
+          if (!pitcherType) {
+            const code = p.rosterPositionCode
+            if (code === 'SP') pitcherType = 'SP'
+            else if (code === 'RP' || code === 'CL') pitcherType = 'RP'
+            else pitcherType = (item.seasonGS || 0) > 0 ? 'SP' : 'RP'
+          }
+
           enriched[idx] = {
-            ...enriched[idx],
+            ...p,
             seasonERA:  item.seasonERA,
             seasonWHIP: item.seasonWHIP,
             seasonIP:   item.seasonIP,
             seasonW:    item.seasonW,
             seasonL:    item.seasonL,
+            seasonSV:   item.seasonSV,
+            seasonHLD:  item.seasonHLD,
+            seasonGS:   item.seasonGS,
             last3:      item.last3 || [],
+            last5:      item.last5 || [],
             last3Avg:   item.last3Avg,
+            pitcherType,
           }
         }
 
@@ -528,6 +562,7 @@ export default function App() {
                 updatedIds={updatedIds}
                 fgBatters={fgBatters}
                 fgPitchers={fgPitchers}
+                probableStarterIds={probableStarterIds}
               />
             )}
           </>
