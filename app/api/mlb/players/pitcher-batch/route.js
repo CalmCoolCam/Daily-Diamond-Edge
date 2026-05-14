@@ -63,9 +63,9 @@ export async function GET(request) {
           }
         }
 
-        // Last 3 and last 5 appearances (most-recent-first from API)
-        const last3 = allStarts.slice(0, 3).map(mapAppearance)
-        const last5 = allStarts.slice(0, 5).map(mapAppearance)
+        // Last 3 and last 5 appearances — API returns oldest-first, so take from end and reverse to newest-first
+        const last3 = allStarts.slice(-3).reverse().map(mapAppearance)
+        const last5 = allStarts.slice(-5).reverse().map(mapAppearance)
 
         // Average ERA and WHIP across last 3 starts for grade computation
         const validERA  = last3.filter((s) => s.era  != null).map((s) => parseFloat(s.era))
